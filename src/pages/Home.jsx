@@ -50,6 +50,10 @@ function SectionNav() {
 }
 
 export default function Home() {
+  useEffect(() => {
+    document.title = 'Portfolio · 곽승민 · SimpraWorld'
+  }, [])
+
   return (
     <>
       <S.Hero>

@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import * as S from './Dayflip.styles'
 
 const SCREENSHOTS = [
@@ -13,6 +14,10 @@ const SCREENSHOTS = [
 const APP_ICON = '/dayflip/icon.png'
 
 export default function Dayflip() {
+  useEffect(() => {
+    document.title = 'DayFlip · SimpraWorld'
+  }, [])
+
   return (
     <S.Page>
       {/* Header: 아이콘 + 제목 + 메타 + 설치 */}
@@ -152,6 +157,11 @@ export default function Dayflip() {
             <S.InfoTitle>PRIVACY</S.InfoTitle>
             <S.InfoValue>개인정보처리방침 →</S.InfoValue>
             <S.InfoSub>/dayflip/policy</S.InfoSub>
+          </S.InfoBoxLink>
+          <S.InfoBoxLink href="/dayflip/data">
+            <S.InfoTitle>DATA HANDLING</S.InfoTitle>
+            <S.InfoValue>데이터 처리 안내 →</S.InfoValue>
+            <S.InfoSub>/dayflip/data</S.InfoSub>
           </S.InfoBoxLink>
           <S.InfoBox>
             <S.InfoTitle>SUPPORT</S.InfoTitle>

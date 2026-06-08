@@ -1,7 +1,12 @@
+import { useEffect } from 'react'
 import { Section, SectionHeader, SectionNum, SectionTitle, Button } from '../styles/common.js'
 import * as S from './About.styles'
 
 export default function About() {
+  useEffect(() => {
+    document.title = 'Welcome to SimpraWorld'
+  }, [])
+
   return (
     <>
       <S.Hero>

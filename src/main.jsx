@@ -6,6 +6,7 @@ import Home from './pages/Home.jsx'
 import About from './pages/About.jsx'
 import Dayflip from './pages/Dayflip.jsx'
 import DayflipPolicy from './pages/DayflipPolicy.jsx'
+import DayflipData from './pages/DayflipData.jsx'
 import { GlobalStyle } from './styles/GlobalStyle.js'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -21,6 +22,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="/dayflip" element={<Dayflip />} />
         </Route>
         <Route path="/dayflip/policy" element={<DayflipPolicy />} />
+        <Route path="/dayflip/data" element={<DayflipData />} />
       </Routes>
     </BrowserRouter>
   </React.StrictMode>
