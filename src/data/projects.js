@@ -1,12 +1,12 @@
 export const projects = [
   {
     num: '001',
-    name: 'AI 다이어리',
+    name: 'DayFlip — AI 다이어리',
     badge: 'Google Play',
-    href: '#',
+    href: '/dayflip',
     desc: 'AI와 함께 쓰는 감성 다이어리 앱. 기획·디자인·개발·출시까지 1인 완주. Google Play 사전 체험판 배포 중, 구독 수익화 모델 적용.',
     tags: ['React Native', 'Expo', 'Supabase', 'AI'],
-    link: 'Google Play →',
+    link: '앱 상세 보기 →',
   },
   {
     num: '002',

@@ -22,18 +22,26 @@ export const Button = styled.a`
         `
       : css`
           background: ${theme.accent};
-          color: #0a0a0a;
+          color: ${theme.onAccent};
           font-weight: 700;
           border: none;
           &:hover { background: ${theme.accent2}; }
         `}
 `
 
-// 공통 섹션
+// 공통 섹션 — PC 환경에서 한 섹션이 한 화면을 채우도록 min-height: 100vh
 export const Section = styled.section`
+  min-height: 100vh;
   padding: 6rem 3rem;
   border-bottom: 1px solid ${theme.border};
-  @media (max-width: 768px) { padding: 4rem 1.5rem; }
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+
+  @media (max-width: 768px) {
+    min-height: auto;
+    padding: 4rem 1.5rem;
+  }
 `
 
 export const SectionHeader = styled.div`

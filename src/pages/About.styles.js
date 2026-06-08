@@ -35,7 +35,7 @@ export const Title = styled.h1`
 `
 
 export const Lead = styled.p`
-  max-width: 640px;
+  max-width: 670px;
   font-size: 18px;
   color: ${theme.text2};
   line-height: 1.75;
@@ -126,7 +126,7 @@ export const Quote = styled.div`
   padding: 3rem 2rem;
   border-left: 2px solid ${theme.accent};
   background: ${theme.bg2};
-  margin: 2rem 0;
+  margin: 5rem 0;
 `
 
 export const QuoteText = styled.p`

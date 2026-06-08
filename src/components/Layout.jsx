@@ -24,11 +24,9 @@ export default function Layout() {
       <S.Nav>
         <S.NavLogo to="/">SIMPRAWORLD</S.NavLogo>
         <S.NavLinks>
-          <S.NavItem to="/about">About</S.NavItem>
-          <S.NavHashLink to="/#projects">Projects</S.NavHashLink>
-          <S.NavHashLink to="/#experience">Experience</S.NavHashLink>
-          <S.NavHashLink to="/#skills">Skills</S.NavHashLink>
-          <S.NavHashLink to="/#contact">Contact</S.NavHashLink>
+          <S.NavItem to="/" end>Home</S.NavItem>
+          <S.NavItem to="/dayflip" end>DayFlip</S.NavItem>
+          <S.NavItem to="/portfolio">Portfolio</S.NavItem>
         </S.NavLinks>
       </S.Nav>
 

@@ -11,7 +11,7 @@ export const Nav = styled.nav`
   justify-content: space-between;
   align-items: center;
   border-bottom: 1px solid ${theme.border};
-  background: rgba(22,22,28,0.85);
+  background: ${theme.navBg};
   backdrop-filter: blur(12px);
 
   @media (max-width: 768px) { padding: 1rem 1.5rem; }

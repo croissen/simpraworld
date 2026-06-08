@@ -1,6 +1,53 @@
 import styled from 'styled-components'
 import { theme } from '../styles/GlobalStyle'
 
+/* ---------- 섹션 점프 탭 (Portfolio 페이지 내부) ---------- */
+export const SectionNav = styled.div`
+  position: sticky;
+  top: 56px;             /* 메인 nav 높이만큼 내림 */
+  z-index: 50;
+  background: ${theme.navBg};
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid ${theme.border};
+  padding: 0.75rem 3rem;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+
+  @media (max-width: 768px) {
+    padding: 0.5rem 1rem;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    &::-webkit-scrollbar { display: none; }
+  }
+`
+
+export const SectionNavBtn = styled.button`
+  font-family: ${theme.mono};
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  padding: 0.5rem 1rem;
+  border-radius: 100px;
+  border: 1px solid ${theme.border};
+  background: transparent;
+  color: ${theme.text2};
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+
+  &:hover {
+    color: ${theme.text};
+    border-color: ${theme.border2};
+    background: ${theme.bg2};
+  }
+
+  &.active {
+    color: ${theme.onAccent};
+    background: ${theme.accent};
+    border-color: ${theme.accent};
+  }
+`
+
 export const Hero = styled.div`
   min-height: 100vh;
   display: flex;
@@ -122,9 +169,9 @@ export const ProjectBadge = styled.span`
   font-family: ${theme.mono};
   font-size: 10px;
   padding: 0.2rem 0.5rem;
-  background: rgba(200,245,90,0.1);
+  background: ${theme.accentSoftBg};
   color: ${theme.accent};
-  border: 1px solid rgba(200,245,90,0.2);
+  border: 1px solid ${theme.accentSoftBorder};
   border-radius: 2px;
   letter-spacing: 0.08em;
 `
@@ -296,10 +343,9 @@ export const ContactHeading = styled.h2`
 
 export const ContactSub = styled.p`
   margin-top: 1.25rem;
-  font-size: 15px;
+  font-size: 17px;
   color: ${theme.text2};
   line-height: 1.7;
-  max-width: 380px;
 `
 
 export const ContactInfo = styled.div`
@@ -308,16 +354,14 @@ export const ContactInfo = styled.div`
   gap: 1.5rem;
 `
 
-export const ContactLink = styled.a`
+export const ContactLink = styled.div`
   display: flex;
   align-items: center;
   gap: 1rem;
-  text-decoration: none;
   color: ${theme.text};
   padding: 1.25rem 1.5rem;
   border: 1px solid ${theme.border};
-  transition: border-color 0.2s, background 0.2s;
-  &:hover { border-color: ${theme.border2}; background: ${theme.bg2}; }
+  background: ${theme.bg2};
 `
 
 export const ContactLinkLabel = styled.span`
