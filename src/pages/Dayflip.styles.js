@@ -18,8 +18,8 @@ export const Header = styled.div`
   border-bottom: 1px solid ${theme.border};
 
   @media (max-width: 768px) {
-    grid-template-columns: 1fr;
-    gap: 1.5rem;
+    grid-template-columns: 1fr 110px;
+    gap: 1rem;
   }
 `
 
@@ -103,7 +103,7 @@ export const AppIcon = styled.div`
   color: ${({ $src }) => ($src ? 'transparent' : theme.onAccent)};
   letter-spacing: 0.1em;
 
-  @media (max-width: 768px) { width: 120px; height: 120px; border-radius: 22px; }
+  @media (max-width: 768px) { width: 100px; height: 100px; border-radius: 20px; }
 `
 
 /* ---------- Install / Share ---------- */
