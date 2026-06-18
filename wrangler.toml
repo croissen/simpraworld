@@ -1,0 +1,8 @@
+name = "simpraworld-app"
+compatibility_date = "2026-06-18"
+
+# 정적 빌드 결과(dist)를 그대로 서빙하는 assets-only Worker.
+# SPA fallback: 없는 경로(/about, /my-universe 등)는 index.html로 → react-router가 처리.
+[assets]
+directory = "./dist"
+not_found_handling = "single-page-application"
