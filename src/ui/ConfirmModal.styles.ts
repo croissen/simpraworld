@@ -42,21 +42,25 @@ export const Btns = styled.div`
   justify-content: flex-end;
   gap: 8px;
 `
-export const Cancel = styled.button`
+export const Cancel = styled.button<{ $active?: boolean }>`
   background: #1b2030;
-  border: 1px solid #2b3346;
+  border: 1px solid ${(p) => (p.$active ? '#5b8cff' : '#2b3346')};
   color: #dbe3f4;
   padding: 8px 14px;
   border-radius: 8px;
   cursor: pointer;
   font-size: 13px;
+  outline: none;
+  box-shadow: ${(p) => (p.$active ? '0 0 0 2px #5b8cff55' : 'none')};
 `
-export const Ok = styled.button`
+export const Ok = styled.button<{ $active?: boolean }>`
   background: #3a1620;
-  border: 1px solid #6b2030;
+  border: 1px solid ${(p) => (p.$active ? '#ff5b78' : '#6b2030')};
   color: #ffb3c0;
   padding: 8px 14px;
   border-radius: 8px;
   cursor: pointer;
   font-size: 13px;
+  outline: none;
+  box-shadow: ${(p) => (p.$active ? '0 0 0 2px #ff5b7855' : 'none')};
 `

@@ -74,8 +74,8 @@ export const Row = styled.div`
   flex-wrap: wrap;
 `
 
-/* 직접 색 고르기 — 스와치(네이티브 color input) + HEX 텍스트 */
-export const ColorRow = styled.label`
+/* 직접 색 고르기 — 스와치(네이티브 color input) + HEX 입력(타이핑+Enter로 적용) */
+export const ColorRow = styled.div`
   display: flex;
   align-items: center;
   gap: 8px;
@@ -83,7 +83,6 @@ export const ColorRow = styled.label`
   border: 1px solid #2b3346;
   border-radius: 8px;
   padding: 5px 8px;
-  cursor: pointer;
   margin-top: 6px;
 
   input[type='color'] {
@@ -102,11 +101,19 @@ export const ColorRow = styled.label`
     border: 1px solid #2b3346;
     border-radius: 5px;
   }
-  > span {
-    font-size: 12px;
+  /* HEX 입력칸 */
+  input[type='text'] {
+    flex: 1;
+    min-width: 0;
+    background: none;
+    border: none;
     color: #cdd6ea;
     font-family: ui-monospace, monospace;
+    font-size: 12px;
     letter-spacing: 0.04em;
+    padding: 4px 0;
+    outline: none;
+    text-transform: uppercase;
   }
 `
 

@@ -1,6 +1,6 @@
 import { get, set } from 'idb-keyval'
 import { emptyDoc, uid } from './types'
-import type { Asset, ComponentDef, NodeType, Placement, SimpraWorldDoc, SNode, SpaceItem } from './types'
+import type { Asset, ComponentDef, NodeType, Placement, SEdge, SimpraWorldDoc, SNode, SpaceItem } from './types'
 import { makeSampleWorld } from './sampleWorld'
 
 export interface Camera {
@@ -43,8 +43,64 @@ export function getSnapshot() {
 function changed() {
   version += 1
   markDirty()
+  recordHistory()
   listeners.forEach((l) => l())
   scheduleSave()
+}
+
+// ── 실행취소/다시실행 (Undo/Redo) ────────────────────────────
+// doc 전체 스냅샷(JSON)을 스택에 쌓는다. changed()가 호출될 때 doc이 실제로
+// 바뀐 경우에만 1건 기록(선택만 바뀐 변경 등은 doc이 같아 무시됨).
+const HISTORY_LIMIT = 30
+let past: string[] = []
+let future: string[] = []
+let committedJSON = '' // 마지막으로 확정된 doc 상태
+let historyReady = false // init 완료 전엔 기록하지 않음
+export const canUndo = () => past.length > 0
+export const canRedo = () => future.length > 0
+
+function resetHistory() {
+  past = []
+  future = []
+  committedJSON = JSON.stringify(doc)
+  historyReady = true
+}
+
+function recordHistory() {
+  if (!historyReady) return
+  const cur = JSON.stringify(doc)
+  if (cur === committedJSON) return // doc 변화 없음(선택/공간만 바뀜) → 기록 안 함
+  past.push(committedJSON)
+  if (past.length > HISTORY_LIMIT) past.shift()
+  future = []
+  committedJSON = cur
+}
+
+/** undo/redo로 받은 스냅샷을 doc에 적용 (히스토리는 다시 기록하지 않음). */
+function applyDocSnapshot(json: string) {
+  doc = JSON.parse(json) as SimpraWorldDoc
+  committedJSON = json
+  // 사라진 항목은 선택/경로에서 정리
+  const livePids = new Set(doc.placements.map((p) => p.id))
+  selection = new Set([...selection].filter((pid) => livePids.has(pid)))
+  const liveNodes = new Set(doc.nodes.map((n) => n.id))
+  spacePath = spacePath.filter((id) => liveNodes.has(id))
+  version += 1
+  markDirty()
+  listeners.forEach((l) => l())
+  scheduleSave()
+}
+
+export function undo() {
+  if (!past.length) return
+  future.push(committedJSON)
+  applyDocSnapshot(past.pop()!)
+}
+
+export function redo() {
+  if (!future.length) return
+  past.push(committedJSON)
+  applyDocSnapshot(future.pop()!)
 }
 
 // ── 접근자 ───────────────────────────────────────────────────
@@ -146,24 +202,42 @@ export function selectionToDoc(): SimpraWorldDoc {
   const out = emptyDoc()
   const seenNode = new Set<string>()
   const seenAsset = new Set<string>()
+  const rootByPid = new Map<string, string>() // 선택된 원본 배치 pid → out에서의 루트 배치 id
   for (const pid of selection) {
     const p = getPlacement(pid)
     if (!p) continue
     const sub = nodeToDoc(p.nodeId)
     if (!sub) continue
-    for (const sp of sub.placements) if (sp.space === null) (sp.x = p.x), (sp.y = p.y)
+    for (const sp of sub.placements)
+      if (sp.space === null) (sp.x = p.x), (sp.y = p.y), rootByPid.set(pid, sp.id)
     for (const n of sub.nodes) if (!seenNode.has(n.id)) seenNode.add(n.id), out.nodes.push(n)
     for (const a of sub.assets) if (!seenAsset.has(a.id)) seenAsset.add(a.id), out.assets.push(a)
     for (const sp of sub.placements) out.placements.push(sp)
-    for (const e of sub.edges) out.edges.push(e)
+    for (const e of sub.edges) out.edges.push(e) // 폴더 내부 참조선
+  }
+  // 선택한 항목들 사이의 참조선(양 끝이 모두 선택된 배치)을 루트끼리 다시 연결
+  for (const e of doc.edges) {
+    const a = rootByPid.get(e.from)
+    const b = rootByPid.get(e.to)
+    if (a && b) out.edges.push({ id: uid('e'), from: a, to: b })
   }
   return out
+}
+
+/** 복사 시 OS 클립보드에 박혀 있던 이미지(스크린샷)를 비워 Ctrl+V가 내부 클립보드를 쓰게 함. */
+function evictOSClipboardImage() {
+  try {
+    navigator.clipboard?.writeText('').catch(() => {})
+  } catch {
+    /* 권한/미지원 → 무시 */
+  }
 }
 
 /** 선택된 항목 전부를 상대 위치 유지한 채 복사 (독립 복제) */
 export function copySelection() {
   if (!selection.size) return
   clipboard = { mode: 'copy', doc: selectionToDoc() }
+  evictOSClipboardImage()
   bumpUI()
 }
 
@@ -200,6 +274,7 @@ export function uniqueCopySelection() {
     .filter((p): p is Placement => !!p)
     .map((p) => ({ nodeId: p.nodeId, x: p.x, y: p.y }))
   if (items.length) clipboard = { mode: 'unique', items }
+  evictOSClipboardImage()
   bumpUI()
 }
 
@@ -209,7 +284,7 @@ function pasteUnique(items: { nodeId: string; x: number; y: number }[], dx: numb
   const newPids: string[] = []
   for (const it of items) {
     if (space !== null && isCyclic(it.nodeId, space)) continue
-    if (doc.placements.some((p) => p.nodeId === it.nodeId && p.space === space)) continue
+    // 같은 공간에도 또 하나 놓을 수 있게 허용(같은 노드를 공유 = 결속). 중복 배치 금지 안 함.
     const pl: Placement = { id: uid('p'), nodeId: it.nodeId, space, x: it.x + dx, y: it.y + dy }
     doc.placements.push(pl)
     newPids.push(pl.id)
@@ -290,6 +365,7 @@ export function itemsInCurrentSpace(): SpaceItem[] {
       body: n.body,
       x: p.x,
       y: p.y,
+      locked: p.locked,
     })
   }
   return items
@@ -377,10 +453,19 @@ export function updateNode(id: string, patch: Partial<SNode>) {
 /** 드래그 중에는 React 재렌더 없이 배치 좌표만 갱신(=부드러움). 끝날 때 commit */
 export function moveNodeLive(pid: string, x: number, y: number) {
   const p = getPlacement(pid)
-  if (!p) return
+  if (!p || p.locked) return // 잠긴 항목은 움직이지 않음
   p.x = x
   p.y = y
   markDirty()
+}
+
+/** 위치 잠금 토글 (인스펙터 자물쇠). 잠그면 드래그·좌표편집·방향키로 안 움직임. */
+export const isPlacementLocked = (pid: string | null | undefined) => !!getPlacement(pid)?.locked
+export function togglePlacementLock(pid: string) {
+  const p = getPlacement(pid)
+  if (!p) return
+  p.locked = !p.locked
+  changed()
 }
 export function commitMove(pid: string) {
   const p = getPlacement(pid)
@@ -402,7 +487,7 @@ export function setNodeSizeLive(nodeId: string, w: number, h: number) {
 /** 인스펙터에서 좌표 직접 수정 */
 export function setPlacementXY(pid: string, x: number, y: number) {
   const p = getPlacement(pid)
-  if (!p) return
+  if (!p || p.locked) return // 잠긴 항목은 좌표 편집 무시
   p.x = x
   p.y = y
   const n = getNode(p.nodeId)
@@ -462,10 +547,16 @@ export function deleteNode(nodeId: string) {
     }
   }
   doc.nodes = doc.nodes.filter((x) => !delNodes.has(x.id))
+  // 사라질 placement id들 (이 노드/하위 노드의 배치 전부) → 그 배치에 걸린 참조선도 제거
+  const removedPids = new Set(
+    doc.placements
+      .filter((p) => delNodes.has(p.nodeId) || (p.space !== null && delNodes.has(p.space)))
+      .map((p) => p.id),
+  )
   doc.placements = doc.placements.filter(
     (p) => !delNodes.has(p.nodeId) && !(p.space !== null && delNodes.has(p.space)),
   )
-  doc.edges = doc.edges.filter((e) => !delNodes.has(e.from) && !delNodes.has(e.to))
+  doc.edges = doc.edges.filter((e) => !removedPids.has(e.from) && !removedPids.has(e.to))
   // 사라진 placement는 선택에서 제거
   const live = new Set(doc.placements.map((p) => p.id))
   selection = new Set([...selection].filter((pid) => live.has(pid)))
@@ -478,6 +569,38 @@ export function deleteSelection() {
     .map((pid) => getPlacement(pid)?.nodeId)
     .filter((x): x is string => !!x)
   for (const nid of new Set(nodeIds)) deleteNode(nid)
+}
+
+/** 선택된 항목들끼리만 연결된 참조선이 있나(다중 선택 "참조 해제" 버튼 노출 판단). */
+export function selectionHasInternalEdges(): boolean {
+  return doc.edges.some((e) => selection.has(e.from) && selection.has(e.to))
+}
+
+/** "참조 해제": 선택된 항목들끼리의 참조선만 제거. 한쪽만 선택된 참조(예: 1↔4 중 4 미선택)는 유지. */
+export function removeEdgesAmongSelection() {
+  const before = doc.edges.length
+  doc.edges = doc.edges.filter((e) => !(selection.has(e.from) && selection.has(e.to)))
+  if (doc.edges.length !== before) changed()
+}
+
+/** 선택 항목 중 하나라도 여러 곳에 놓인(공유=유니크) 노드가 있나 → 삭제 모달에 "여기서만/전체" 분기. */
+export function selectionHasShared(): boolean {
+  for (const pid of selection) {
+    const nid = getPlacement(pid)?.nodeId
+    if (nid && placementCount(nid) > 1) return true
+  }
+  return false
+}
+
+/** "여기서만 삭제": 공유 노드는 이 배치만 제거(다른 곳 유지), 단독 노드는 통째로 삭제. */
+export function deleteSelectionHereOnly() {
+  const entries = [...selection]
+    .map((pid) => ({ pid, nodeId: getPlacement(pid)?.nodeId }))
+    .filter((e): e is { pid: string; nodeId: string } => !!e.nodeId)
+  for (const { pid, nodeId } of entries) {
+    if (placementCount(nodeId) > 1) removePlacement(pid)
+    else deleteNode(nodeId)
+  }
 }
 
 // ── 다대다 참조 ──────────────────────────────────────────────
@@ -520,6 +643,7 @@ export function removePlacement(pid: string) {
   const p = getPlacement(pid)
   if (!p) return
   doc.placements = doc.placements.filter((x) => x.id !== pid)
+  doc.edges = doc.edges.filter((e) => e.from !== pid && e.to !== pid) // 이 배치의 참조선 제거
   selection.delete(pid)
   changed()
 }
@@ -535,7 +659,7 @@ export function canNestInto(nodeId: string, folderNodeId: string): boolean {
 /** 이 배치를 다른 공간(폴더)으로 이동 — "폴더 위로 끌어다 놓기". 참조 아님(소속만 바뀜). */
 export function movePlacementToSpace(pid: string, space: string | null, x = 0, y = 0) {
   const p = getPlacement(pid)
-  if (!p) return
+  if (!p || p.locked) return // 잠긴 항목은 폴더로 이동도 막음
   if (space !== null && !canNestInto(p.nodeId, space)) return
   p.space = space
   p.x = x
@@ -545,20 +669,22 @@ export function movePlacementToSpace(pid: string, space: string | null, x = 0, y
   changed()
 }
 
-// ── 엣지 (보여주기용 줄 잇기, node-to-node) ──────────────────
+// ── 엣지 (보여주기용 줄 잇기, placement-to-placement) ─────────
+// 참조선은 "배치(placement)" 단위. 같은 노드를 유니크 복사해도 각 배치는 자기만의 참조선을 가짐
+// (내용은 공유, 참조는 분리). from/to = placement id.
 function edgeIndex(from: string, to: string) {
   return doc.edges.findIndex(
     (e) => (e.from === from && e.to === to) || (e.from === to && e.to === from),
   )
 }
-/** 줄 추가(이미 있으면 무시) — 박스로 여러 개 연결할 때 */
-export function linkNodes(from: string, to: string) {
+/** 줄 추가(이미 있으면 무시) — 박스로 여러 개 연결할 때. 인자는 placement id. */
+export function linkPlacements(from: string, to: string) {
   if (from === to || edgeIndex(from, to) >= 0) return
   doc.edges.push({ id: uid('e'), from, to })
   changed()
 }
-/** 줄 토글(있으면 제거, 없으면 추가) — Ctrl+Alt+클릭 */
-export function toggleEdge(from: string, to: string) {
+/** 줄 토글(있으면 제거, 없으면 추가) — Ctrl+Alt+클릭. 인자는 placement id. */
+export function togglePlacementEdge(from: string, to: string) {
   if (from === to) return
   const i = edgeIndex(from, to)
   if (i >= 0) doc.edges.splice(i, 1)
@@ -567,8 +693,8 @@ export function toggleEdge(from: string, to: string) {
 }
 
 export function edgesInCurrentSpace() {
-  const ids = new Set(placementsInCurrentSpace().map((p) => p.nodeId))
-  return doc.edges.filter((e) => ids.has(e.from) && ids.has(e.to))
+  const pids = new Set(placementsInCurrentSpace().map((p) => p.id))
+  return doc.edges.filter((e) => pids.has(e.from) && pids.has(e.to))
 }
 
 // ── 컴포넌트(재사용 스냅샷) ──────────────────────────────────
@@ -631,6 +757,7 @@ export function deleteComponent(id: string) {
 
 /** 외부에서 들여온(.smk) 미니 문서를 컴포넌트 목록에 추가 */
 export function addComponentDoc(name: string, cdoc: SimpraWorldDoc): ComponentDef {
+  migrateEdgesToPlacements(cdoc) // 구버전 컴포넌트 .smk도 placement 기준으로 변환
   const c: ComponentDef = { id: uid('c'), name, doc: cdoc, updatedAt: Date.now() }
   doc.components.push(c)
   changed()
@@ -736,11 +863,13 @@ export function exportFolderDoc(folderId: string): SimpraWorldDoc {
     const n = getNode(id)
     if (n) out.nodes.push({ ...n })
   }
-  // 배치: 폴더 자신은 루트로, 내부 배치는 그대로
+  // 배치: 폴더 자신은 루트로, 내부 배치는 그대로(원본 pid 유지)
   out.placements.push({ id: uid('p'), nodeId: folderId, space: null, x: 0, y: 0 })
-  for (const p of doc.placements) if (p.space && spaces.has(p.space)) out.placements.push({ ...p })
-  // 엣지 (포함 노드끼리)
-  for (const e of doc.edges) if (nodeIds.has(e.from) && nodeIds.has(e.to)) out.edges.push({ ...e })
+  const innerPids = new Set<string>()
+  for (const p of doc.placements)
+    if (p.space && spaces.has(p.space)) (out.placements.push({ ...p }), innerPids.add(p.id))
+  // 엣지 (포함 배치끼리)
+  for (const e of doc.edges) if (innerPids.has(e.from) && innerPids.has(e.to)) out.edges.push({ ...e })
   // 사용된 에셋·템플릿만
   const assetIds = new Set<string>()
   for (const id of nodeIds) {
@@ -774,10 +903,12 @@ export function exportSpaceDoc(spaceId: string | null): SimpraWorldDoc {
     }
   }
   const nodeIds = new Set<string>()
+  const inclPids = new Set<string>()
   for (const p of doc.placements) {
     if (spaces.has(p.space)) {
       nodeIds.add(p.nodeId)
-      // 현재 공간의 직속 자식 → 루트로(space=null), 나머지는 구조 그대로
+      inclPids.add(p.id)
+      // 현재 공간의 직속 자식 → 루트로(space=null), 나머지는 구조 그대로(원본 pid 유지)
       out.placements.push({ ...p, space: p.space === spaceId ? null : p.space })
     }
   }
@@ -791,7 +922,7 @@ export function exportSpaceDoc(spaceId: string | null): SimpraWorldDoc {
     if (n?.assetId) assetIds.add(n.assetId)
   }
   for (const a of doc.assets) if (assetIds.has(a.id)) out.assets.push({ ...a })
-  for (const e of doc.edges) if (nodeIds.has(e.from) && nodeIds.has(e.to)) out.edges.push({ ...e })
+  for (const e of doc.edges) if (inclPids.has(e.from) && inclPids.has(e.to)) out.edges.push({ ...e })
   return out
 }
 
@@ -810,11 +941,13 @@ export function resetToSample() {
   camera = { x: 0, y: 0, zoom: 1 }
   noteEditorNodeId = null
   selectedComponentId = null
+  resetHistory() // 리셋은 되돌릴 수 없음 → 히스토리도 비움
   changed() // 저장(IndexedDB)도 함께
 }
 
 /** .smk 폴더를 My Universe(최상위)로 가져오기. 루트 폴더 이름이 겹치면 "이름(1)". */
 export function importWorld(incoming: SimpraWorldDoc) {
+  migrateEdgesToPlacements(incoming) // 구버전(node 기준) .smk도 placement 기준으로 변환 후 가져옴
   const idMap = new Map<string, string>()
   const remap = (old: string) => {
     if (!idMap.has(old)) idMap.set(old, uid('i'))
@@ -882,6 +1015,35 @@ function scheduleSave() {
   }, 400)
 }
 
+/** 구버전 마이그레이션: 엣지가 node id 기반이면 placement id 기반으로 변환(같은 공간 배치쌍 연결). */
+function migrateEdgesToPlacements(d: SimpraWorldDoc) {
+  if (d.components) for (const c of d.components) migrateEdgesToPlacements(c.doc) // 컴포넌트 내부도
+  if (!d.edges?.length) return
+  const pidSet = new Set(d.placements.map((p) => p.id))
+  // 모든 엣지 양끝이 이미 placement id면 신버전 → 그대로 둠
+  if (d.edges.every((e) => pidSet.has(e.from) && pidSet.has(e.to))) return
+  const out: SEdge[] = []
+  const seen = new Set<string>()
+  for (const e of d.edges) {
+    if (pidSet.has(e.from) && pidSet.has(e.to)) {
+      out.push(e)
+      continue
+    }
+    // node 기반: 두 노드가 같은 공간에 함께 놓인 배치쌍을 모두 연결
+    const froms = d.placements.filter((p) => p.nodeId === e.from)
+    const tos = d.placements.filter((p) => p.nodeId === e.to)
+    for (const fp of froms)
+      for (const tp of tos) {
+        if (fp.space !== tp.space || fp.id === tp.id) continue
+        const key = [fp.id, tp.id].sort().join('|')
+        if (seen.has(key)) continue
+        seen.add(key)
+        out.push({ id: uid('e'), from: fp.id, to: tp.id })
+      }
+  }
+  d.edges = out
+}
+
 export async function init() {
   try {
     const saved = await get<SimpraWorldDoc>(DB_KEY)
@@ -897,6 +1059,7 @@ export async function init() {
       }
       if (!saved.components) saved.components = [] // 구버전엔 컴포넌트 배열 없음
       if (!saved.universeName) saved.universeName = 'My Universe' // 구버전엔 유니버스명 없음
+      migrateEdgesToPlacements(saved) // 구버전: node 기반 엣지 → placement 기반
       doc = saved
     } else {
       doc = makeSampleWorld()
@@ -905,5 +1068,6 @@ export async function init() {
   } catch {
     doc = makeSampleWorld()
   }
+  resetHistory()
   changed()
 }

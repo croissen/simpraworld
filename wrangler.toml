@@ -1,4 +1,4 @@
-name = "simpraworld-app"
+name = "simpraworld"
 compatibility_date = "2026-06-18"
 
 # 정적 빌드 결과(dist)를 그대로 서빙하는 assets-only Worker.

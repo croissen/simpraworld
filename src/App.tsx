@@ -16,6 +16,7 @@ import {
   copySelection,
   deleteComponent,
   deleteSelection,
+  deleteSelectionHereOnly,
   getCamera,
   getComponents,
   getComponentsOpen,
@@ -26,12 +27,15 @@ import {
   getSnapshot,
   init,
   pasteClipboard,
+  redo,
   saveSelectionAsComponent,
   selectAll,
   selectionCount,
+  selectionHasShared,
   setPlacementXY,
   subscribe,
   suggestComponentName,
+  undo,
 } from './store'
 import { fileToImage } from './image'
 import { GlobalStyle } from './global.styles'
@@ -64,6 +68,19 @@ export default function App() {
       if (tag === 'input' || tag === 'textarea' || el?.isContentEditable) return
       const ctrl = e.ctrlKey || e.metaKey
 
+      // Ctrl+Z 실행취소 / Ctrl+Y(또는 Ctrl+Shift+Z) 다시실행
+      if (ctrl && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault()
+        if (e.shiftKey) redo()
+        else undo()
+        return
+      }
+      if (ctrl && (e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault()
+        redo()
+        return
+      }
+
       // Ctrl+A 전체선택 / Ctrl+C 복사 / Ctrl+V 붙여넣기
       if (ctrl && (e.key === 'a' || e.key === 'A')) {
         e.preventDefault()
@@ -73,7 +90,7 @@ export default function App() {
       if (ctrl && (e.key === 'c' || e.key === 'C')) {
         if (selectionCount() > 0) {
           e.preventDefault()
-          copySelection()
+          copySelection() // OS 클립보드 이미지 비우기는 store가 처리
         }
         return
       }
@@ -159,16 +176,34 @@ export default function App() {
       )}
       {noteId && <NoteEditor nodeId={noteId} />}
       <ContextMenu onRequestDelete={requestDelete} onCreateComponent={requestCreateComponent} />
-      {delCount !== null && (
-        <ConfirmModal
-          message={delCount > 1 ? `Delete ${delCount} items?` : 'Delete selected item?'}
-          onConfirm={() => {
-            deleteSelection()
-            setDelCount(null)
-          }}
-          onCancel={() => setDelCount(null)}
-        />
-      )}
+      {delCount !== null &&
+        (selectionHasShared() ? (
+          <ConfirmModal
+            message="여러 곳에 연결된(유니크) 항목이 있어요. 전체에서 지울지, 여기서만 지울지 선택하세요."
+            cancelLabel="Cancel"
+            altLabel="Delete all"
+            confirmLabel="Delete here"
+            onAlt={() => {
+              deleteSelection() // 전체(모든 곳에서) 삭제
+              setDelCount(null)
+            }}
+            onConfirm={() => {
+              deleteSelectionHereOnly() // 이 배치만(다른 곳 유지)
+              setDelCount(null)
+            }}
+            onCancel={() => setDelCount(null)}
+          />
+        ) : (
+          <ConfirmModal
+            message={delCount > 1 ? `Delete ${delCount} items?` : 'Delete selected item?'}
+            confirmLabel="Delete"
+            onConfirm={() => {
+              deleteSelection()
+              setDelCount(null)
+            }}
+            onCancel={() => setDelCount(null)}
+          />
+        ))}
       {delComp && (
         <ConfirmModal
           message={`Delete component "${delComp.name}"?`}
@@ -192,8 +227,8 @@ export default function App() {
       )}
       <S.Hint>
         Drag empty = select box · Space/middle-drag = pan · Wheel = zoom · Shift-click = multi ·
-        Ctrl+A/C/V · Double-click folder = open · Drag onto folder = move in · Ctrl+Alt-click/drag =
-        connect line
+        Ctrl+A/C/V · Ctrl+Z undo / Ctrl+Y redo · Double-click folder = open · Drag onto folder = move
+        in · Ctrl+Alt-click/drag = connect line
       </S.Hint>
     </S.AppRoot>
   )

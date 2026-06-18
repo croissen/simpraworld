@@ -54,6 +54,7 @@ export interface Placement {
   space: string | null // 들어있는 폴더의 node id (null = 최상위 공간)
   x: number
   y: number
+  locked?: boolean // 위치 잠금: true면 드래그·좌표편집으로 안 움직임
 }
 
 /** 캔버스 렌더/조작용 조인 뷰: placement(위치) + node(데이터). 저장 안 됨, 런타임 계산용. */
@@ -72,12 +73,13 @@ export interface SpaceItem {
   radius?: number
   x: number
   y: number
+  locked?: boolean
 }
 
 export interface SEdge {
   id: string
-  from: string // node id
-  to: string // node id
+  from: string // placement id (배치 단위 — 같은 노드라도 배치마다 참조선이 따로)
+  to: string // placement id
 }
 
 export interface SimpraWorldDoc {

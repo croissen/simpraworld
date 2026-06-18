@@ -63,10 +63,12 @@ export function makeSampleWorld(): SimpraWorldDoc {
     }),
   )
 
+  const pHome = place('f_home', 'f_world', -160, -40)
+  const pFriends = place('f_friends', 'f_world', 170, -40)
   doc.placements.push(
     place('f_world', null, 0, 0), // My Universe 안 (0,0), 크기 100
-    place('f_home', 'f_world', -160, -40),
-    place('f_friends', 'f_world', 170, -40),
+    pHome,
+    pFriends,
     place('f_fridge', 'f_home', 0, 0),
     place('m_kimchi', 'f_fridge', -60, 0),
     place('m_milk', 'f_fridge', 70, 20),
@@ -74,7 +76,8 @@ export function makeSampleWorld(): SimpraWorldDoc {
     place('m_kim', 'f_friends', 80, 30),
   )
 
-  doc.edges.push({ id: uid('e'), from: 'f_home', to: 'f_friends' })
+  // 엣지는 placement(배치) 기준 — 같은 공간에 놓인 두 배치를 잇는다.
+  doc.edges.push({ id: uid('e'), from: pHome.id, to: pFriends.id })
 
   return doc
 }

@@ -22,4 +22,12 @@ export const Button = styled.button<{ $on?: boolean; $danger?: boolean }>`
   &:hover {
     background: ${(p) => (p.$danger ? '#5c2a3a' : '#232b41')};
   }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  &:disabled:hover {
+    background: #1b2030;
+  }
 `

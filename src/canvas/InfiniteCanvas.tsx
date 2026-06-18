@@ -11,12 +11,13 @@ import {
   getAsset,
   getAspectLocked,
   getCamera,
+  getDoc,
   getPlacement,
   getSelectionSet,
   getSoleSelectedPid,
   isSelected,
   itemsInCurrentSpace,
-  linkNodes,
+  linkPlacements,
   markDirty,
   moveNodeLive,
   movePlacementToSpace,
@@ -26,8 +27,11 @@ import {
   selectMany,
   setCamera,
   setNodeSizeLive,
-  toggleEdge,
+  togglePlacementEdge,
 } from '../store'
+
+// 노드 둘레 링 표시: null=없음, yellow=일반 선택, purple=유니크(공유) 선택, sibling=결속 형제(점선)
+type Ring = 'yellow' | 'purple' | 'sibling' | null
 
 const MIN_ZOOM = 0.05
 const MAX_ZOOM = 8
@@ -59,7 +63,7 @@ export default function InfiniteCanvas() {
     let spaceHeld = false // Space = 패닝 모드
     let marquee: { x0: number; y0: number; x1: number; y1: number } | null = null // 영역 선택/줄잇기 박스
     let dragGroup: { pid: string; x0: number; y0: number }[] | null = null // 일괄 이동용 시작좌표
-    let linkSourceNodeIds: string[] = [] // Ctrl+Alt 줄잇기의 시작(소스) 노드들(다중 가능)
+    let linkSourcePids: string[] = [] // Ctrl+Alt 줄잇기의 시작(소스) 배치 pid들(다중 가능)
 
     // ── 좌표 변환 ──
     const cssW = () => canvas.clientWidth
@@ -100,32 +104,67 @@ export default function InfiniteCanvas() {
       drawGrid(W, H)
 
       const items = itemsInCurrentSpace()
-
-      // 엣지 먼저 (node id로 이 공간 내 위치 찾기)
-      const itemByNode = new Map(items.map((it) => [it.nodeId, it]))
-      ctx.strokeStyle = 'rgba(150,170,210,0.35)'
-      ctx.lineWidth = Math.max(1, 1.5 * c.zoom)
+      // 엣지는 배치(placement) 단위. 각 배치는 고유 pid → 같은 노드 복사본끼리도 참조선이 따로.
+      // z순서(=items 인덱스). 엣지는 두 끝점 중 "아래에 있는 쪽" 바로 뒤에 깐다 →
+      // 선은 항상 연결된 두 요소(참조 대상)보다 뒤에 있고, 한쪽을 맨앞으로 올려도
+      // 선은 따라오지 않음. 끝점보다 아래의 것들(맨뒤 사진 등)은 선에 가려지지 않음.
+      const itemByPid = new Map(items.map((it) => [it.pid, it]))
+      const zOf = new Map(items.map((it, i) => [it.pid, i]))
+      const edgesByAnchor = new Map<number, { from: string; to: string }[]>()
       for (const e of edgesInCurrentSpace()) {
-        const a = itemByNode.get(e.from)
-        const b = itemByNode.get(e.to)
-        if (!a || !b) continue
-        const pa = w2s(a.x, a.y)
-        const pb = w2s(b.x, b.y)
-        ctx.beginPath()
-        ctx.moveTo(pa.x, pa.y)
-        ctx.lineTo(pb.x, pb.y)
-        ctx.stroke()
+        const za = zOf.get(e.from)
+        const zb = zOf.get(e.to)
+        if (za === undefined || zb === undefined) continue
+        const anchor = Math.min(za, zb)
+        const arr = edgesByAnchor.get(anchor)
+        if (arr) arr.push(e)
+        else edgesByAnchor.set(anchor, [e])
+      }
+      function strokeEdges(eds: { from: string; to: string }[]) {
+        ctx.strokeStyle = 'rgba(150,170,210,0.35)'
+        ctx.lineWidth = Math.max(1, 1.5 * c.zoom)
+        for (const e of eds) {
+          const a = itemByPid.get(e.from)
+          const b = itemByPid.get(e.to)
+          if (!a || !b) continue
+          const pa = w2s(a.x, a.y)
+          const pb = w2s(b.x, b.y)
+          ctx.beginPath()
+          ctx.moveTo(pa.x, pa.y)
+          ctx.lineTo(pb.x, pb.y)
+          ctx.stroke()
+        }
       }
 
-      // 노드 — 보이는 것만 (뷰포트 컬링)
+      // 공유(유니크 카피된) 노드 = 여러 곳에 placement가 있는 노드. 전체 기준으로 카운트.
+      const useCount = new Map<string, number>()
+      for (const p of getDoc().placements) useCount.set(p.nodeId, (useCount.get(p.nodeId) || 0) + 1)
+      const isShared = (nid: string) => (useCount.get(nid) || 0) > 1
+      // 선택된 항목 중 공유 노드 → 같은 공간의 다른 placement(결속 형제)도 보라로 표시(삭제 시 함께 사라짐 안내).
+      const sharedSelNodes = new Set(
+        items.filter((it) => isSelected(it.pid) && isShared(it.nodeId)).map((it) => it.nodeId),
+      )
+
+      // 노드 — 보이는 것만 (뷰포트 컬링). 각 노드를 그리기 직전에 그 노드가 위쪽 끝점인 엣지를 깐다.
       const margin = 80
-      for (const it of items) {
+      for (let zi = 0; zi < items.length; zi++) {
+        const it = items[zi]
+        const eds = edgesByAnchor.get(zi)
+        if (eds) strokeEdges(eds)
         const p = w2s(it.x, it.y)
         const hw = Math.max((it.w / 2) * c.zoom, 2)
         const hh = Math.max((it.h / 2) * c.zoom, 2)
         if (p.x + hw < -margin || p.x - hw > W + margin || p.y + hh < -margin || p.y - hh > H + margin)
           continue
-        drawNode(it, p.x, p.y, hw, hh, c.zoom, isSelected(it.pid))
+        // 선택: 공유 노드면 보라, 아니면 노랑. 비선택이지만 선택된 공유노드의 형제면 보라 점선(표시만).
+        const ring: Ring = isSelected(it.pid)
+          ? isShared(it.nodeId)
+            ? 'purple'
+            : 'yellow'
+          : sharedSelNodes.has(it.nodeId)
+            ? 'sibling'
+            : null
+        drawNode(it, p.x, p.y, hw, hh, c.zoom, ring)
         // 드래그로 들어갈 폴더 강조
         if (it.nodeId === armedFolderId) {
           ctx.strokeStyle = '#34c98a'
@@ -184,12 +223,12 @@ export default function InfiniteCanvas() {
         ctx.lineWidth = 1
         ctx.fillRect(x, y, w, h)
         ctx.strokeRect(x, y, w, h)
-        // 줄잇기: 각 소스 노드 중심 → 커서로 가이드 선
-        if (linking && linkSourceNodeIds.length) {
+        // 줄잇기: 각 소스 배치 중심 → 커서로 가이드 선
+        if (linking && linkSourcePids.length) {
           ctx.strokeStyle = '#34c98a'
           ctx.setLineDash([5, 4])
-          for (const sid of linkSourceNodeIds) {
-            const src = items.find((it) => it.nodeId === sid)
+          for (const sid of linkSourcePids) {
+            const src = items.find((it) => it.pid === sid)
             if (!src) continue
             const sp = w2s(src.x, src.y)
             ctx.beginPath()
@@ -236,7 +275,7 @@ export default function InfiniteCanvas() {
       hw: number,
       hh: number,
       zoom: number,
-      selected: boolean,
+      ring: Ring,
     ) {
       const rad = Math.min(hw, hh) // 둥근 정도/점 크기 기준
       // LOD: 20% 미만일 때만 점으로
@@ -277,13 +316,21 @@ export default function InfiniteCanvas() {
       }
       ctx.restore()
 
-      // 선택 링
-      if (selected) {
-        ctx.strokeStyle = '#ffd166'
-        ctx.lineWidth = 2.5
+      // 선택/공유 링: yellow=일반 선택, purple=유니크(공유) 선택, sibling=결속 형제(점선, 표시만)
+      if (ring) {
+        if (ring === 'sibling') {
+          ctx.strokeStyle = '#a78bfa'
+          ctx.lineWidth = 2
+          ctx.setLineDash([6, 4])
+        } else {
+          ctx.strokeStyle = ring === 'purple' ? '#a78bfa' : '#ffd166'
+          ctx.lineWidth = 2.5
+          ctx.setLineDash([])
+        }
         ctx.beginPath()
         ctx.ellipse(x, y, hw + 6, hh + 6, 0, 0, Math.PI * 2)
         ctx.stroke()
+        ctx.setLineDash([])
       }
 
       // 이름 (줌 충분할 때만)
@@ -475,14 +522,12 @@ export default function InfiniteCanvas() {
       downAt = p
       dragGroup = null
 
-      // Ctrl+Alt = 줄잇기: 선택된 모든 노드(소스)에서 대상으로 선(클릭=연결/토글 · 박스=여러 연결)
+      // Ctrl+Alt = 줄잇기: 선택된 모든 배치(소스)에서 대상으로 선(클릭=연결/토글 · 박스=여러 연결)
       if (e.ctrlKey && e.altKey) {
-        const srcs = [...new Set(
-          [...getSelectionSet()].map((pid) => getPlacement(pid)?.nodeId).filter((id): id is string => !!id),
-        )]
+        const srcs = [...getSelectionSet()] // placement id 기준 (배치 단위 참조선)
         if (srcs.length) {
           mode = 'link'
-          linkSourceNodeIds = srcs
+          linkSourcePids = srcs
           dragItem = null
           marquee = { x0: p.x, y0: p.y, x1: p.x, y1: p.y }
           return
@@ -498,7 +543,7 @@ export default function InfiniteCanvas() {
 
       // 단일 선택 노드의 코너 핸들 잡으면 = 리사이즈
       const handle = cornerHandleAt(p.x, p.y)
-      if (handle) {
+      if (handle && !getPlacement(handle.pid)?.locked) {
         mode = 'resize'
         resizeOp = handle
         dragItem = null
@@ -626,22 +671,22 @@ export default function InfiniteCanvas() {
         const hits = itemsIntersecting(marquee).map((it) => it.pid)
         if (e.shiftKey) selectMany([...new Set([...getSelectionSet(), ...hits])])
         else selectMany(hits) // 빈 영역이면 hits=[] → 선택 해제
-      } else if (mode === 'link' && marquee && linkSourceNodeIds.length) {
-        const srcs = linkSourceNodeIds
+      } else if (mode === 'link' && marquee && linkSourcePids.length) {
+        const srcs = linkSourcePids
         const single = srcs.length === 1
         if (!moved) {
-          // 클릭 = 대상 노드에 연결. 소스 1개면 토글, 여러 개면 전부 연결(추가).
+          // 클릭 = 대상 배치에 연결. 소스 1개면 토글, 여러 개면 전부 연결(추가).
           const hit = hitTest(marquee.x1, marquee.y1)
           if (hit) {
             for (const s of srcs) {
-              if (s === hit.nodeId) continue
-              single ? toggleEdge(s, hit.nodeId) : linkNodes(s, hit.nodeId)
+              if (s === hit.pid) continue
+              single ? togglePlacementEdge(s, hit.pid) : linkPlacements(s, hit.pid)
             }
           }
         } else {
-          // 박스 = 걸친 노드 전부에 각 소스로부터 줄 추가
+          // 박스 = 걸친 배치 전부에 각 소스로부터 줄 추가
           for (const it of itemsIntersecting(marquee))
-            for (const s of srcs) if (s !== it.nodeId) linkNodes(s, it.nodeId)
+            for (const s of srcs) if (s !== it.pid) linkPlacements(s, it.pid)
         }
       } else if (mode === 'resize' && resizeOp) {
         commitMove(resizeOp.pid) // 크기·위치 확정(저장 + 재렌더)
@@ -652,7 +697,7 @@ export default function InfiniteCanvas() {
       armedFolderId = null
       dragGroup = null
       marquee = null
-      linkSourceNodeIds = []
+      linkSourcePids = []
       resizeOp = null
       markDirty()
 

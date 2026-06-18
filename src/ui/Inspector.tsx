@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import {
   addAsset,
   enterFolder,
@@ -14,6 +15,7 @@ import {
   selectionCount,
   setAspectLocked,
   setPlacementXY,
+  togglePlacementLock,
   updateNode,
 } from '../store'
 import { uid } from '../types'
@@ -33,12 +35,38 @@ const SHAPES: { v: Shape; label: string }[] = [
 // 7색 프리셋(마지막=흰색). 그 아래 직접 고르는 팔레트(ColorPicker) 제공.
 const COLORS = ['#5b8cff', '#34c98a', '#ff8c5b', '#a78bfa', '#f472b6', '#e3b341', '#e5e7eb']
 
-// 직접 색 고르기 (스와치 + HEX). OS 팔레트 사용.
+// '#RGB'/'#RRGGBB'(# 생략 허용) → '#RRGGBB' 대문자. 잘못된 값이면 null.
+function normalizeHex(s: string): string | null {
+  let v = s.trim().replace(/^#/, '')
+  if (/^[0-9a-fA-F]{3}$/.test(v)) v = v.split('').map((c) => c + c).join('')
+  return /^[0-9a-fA-F]{6}$/.test(v) ? '#' + v.toUpperCase() : null
+}
+
+// 직접 색 고르기: 스와치(네이티브 OS 팔레트) + HEX 입력. HEX 고치고 Enter/포커스아웃 → 그 색으로.
 function ColorPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [hex, setHex] = useState(value.toUpperCase())
+  useEffect(() => setHex(value.toUpperCase()), [value])
+  const commit = () => {
+    const v = normalizeHex(hex)
+    if (v) onChange(v)
+    else setHex(value.toUpperCase()) // 잘못된 값 → 원복
+  }
   return (
     <S.ColorRow>
       <input type="color" value={value} onChange={(e) => onChange(e.target.value)} />
-      <span>{value.toUpperCase()}</span>
+      <input
+        type="text"
+        value={hex}
+        spellCheck={false}
+        onChange={(e) => setHex(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            e.currentTarget.blur() // Enter → blur → commit
+          }
+        }}
+        onBlur={commit}
+      />
     </S.ColorRow>
   )
 }
@@ -138,6 +166,7 @@ export default function Inspector({
               <CommitInput
                 numeric
                 type="number"
+                disabled={pl.locked}
                 value={Math.round(pl.x)}
                 onCommit={(v) => pid && setPlacementXY(pid, Number(v), pl.y)}
               />
@@ -147,10 +176,18 @@ export default function Inspector({
               <CommitInput
                 numeric
                 type="number"
+                disabled={pl.locked}
                 value={Math.round(pl.y)}
                 onCommit={(v) => pid && setPlacementXY(pid, pl.x, Number(v))}
               />
             </S.DimBox>
+            <S.Lock
+              $on={!!pl.locked}
+              onClick={() => pid && togglePlacementLock(pid)}
+              title={pl.locked ? '위치 잠금 해제' : '위치 잠금(움직이지 않음)'}
+            >
+              {pl.locked ? '🔒' : '🔓'}
+            </S.Lock>
           </S.NumRow>
         </S.Field>
       )}

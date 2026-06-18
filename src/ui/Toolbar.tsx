@@ -2,6 +2,8 @@ import { useState } from 'react'
 import {
   addNode,
   addPhoto,
+  canRedo,
+  canUndo,
   exportFolderDoc,
   exportSpaceDoc,
   getCamera,
@@ -11,10 +13,12 @@ import {
   getSelectedNode,
   getUniverseName,
   importWorld,
+  redo,
   resetToSample,
   selectionCount,
   selectionToDoc,
   toggleComponents,
+  undo,
 } from '../store'
 import { exportSmk, importSmk, pickSmkFile, saveSmk } from '../smk'
 import { fileToImage, pickImageFile } from '../image'
@@ -71,6 +75,11 @@ export default function Toolbar() {
 
   return (
     <S.Toolbar>
+      <S.Button onClick={undo} disabled={!canUndo()} title="실행취소 (Ctrl+Z)">↶ Undo</S.Button>
+      <S.Button onClick={redo} disabled={!canRedo()} title="다시실행 (Ctrl+Y / Ctrl+Shift+Z)">
+        ↷ Redo
+      </S.Button>
+      <S.Gap />
       <S.Button onClick={() => addNode('folder', centerWorld().x, centerWorld().y)}>+ Folder</S.Button>
       <S.Button onClick={() => addNode('memo', centerWorld().x, centerWorld().y)}>+ Note</S.Button>
       <S.Button onClick={onPhoto} title="Add a photo from your device">+ Photo</S.Button>
