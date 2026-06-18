@@ -209,7 +209,8 @@ export function selectionToDoc(): SimpraWorldDoc {
     const sub = nodeToDoc(p.nodeId)
     if (!sub) continue
     for (const sp of sub.placements)
-      if (sp.space === null) (sp.x = p.x), (sp.y = p.y), rootByPid.set(pid, sp.id)
+      if (sp.space === null)
+        (sp.x = p.x), (sp.y = p.y), (sp.locked = p.locked), rootByPid.set(pid, sp.id)
     for (const n of sub.nodes) if (!seenNode.has(n.id)) seenNode.add(n.id), out.nodes.push(n)
     for (const a of sub.assets) if (!seenAsset.has(a.id)) seenAsset.add(a.id), out.assets.push(a)
     for (const sp of sub.placements) out.placements.push(sp)
@@ -798,6 +799,7 @@ function placeDoc(incoming: SimpraWorldDoc, space: string | null, dx: number, dy
       space: isRoot ? space : remap(p.space!),
       x: isRoot ? p.x + dx : p.x,
       y: isRoot ? p.y + dy : p.y,
+      locked: p.locked, // 위치잠금 유지
     }
     doc.placements.push(np)
     if (isRoot) rootPids.push(np.id)
@@ -1009,6 +1011,7 @@ export function importWorld(incoming: SimpraWorldDoc) {
       space: isRoot ? null : remap(p.space!),
       x: isRoot ? p.x + dx : p.x,
       y: isRoot ? p.y + dy : p.y,
+      locked: p.locked, // 위치잠금 유지
     })
     if (isRoot) newRootPids.push(newPid)
   }
