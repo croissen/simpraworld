@@ -656,6 +656,20 @@ export function canNestInto(nodeId: string, folderNodeId: string): boolean {
   return !isCyclic(nodeId, folderNodeId)
 }
 
+/**
+ * 노트를 노트 위로 끌어다 놓기 = 데이터만 맞바꿈(swap). 두 배치의 nodeId만 교환하므로
+ * 위치·참조선(엣지는 배치 기준)은 그 자리에 그대로 남고, 각 자리에 상대 노트의 데이터가 들어온다.
+ */
+export function swapPlacementNodes(pidA: string, pidB: string) {
+  const a = getPlacement(pidA)
+  const b = getPlacement(pidB)
+  if (!a || !b || a.id === b.id || a.locked || b.locked) return // 잠긴 개체는 교체 금지
+  const tmp = a.nodeId
+  a.nodeId = b.nodeId
+  b.nodeId = tmp
+  changed()
+}
+
 /** 이 배치를 다른 공간(폴더)으로 이동 — "폴더 위로 끌어다 놓기". 참조 아님(소속만 바뀜). */
 export function movePlacementToSpace(pid: string, space: string | null, x = 0, y = 0) {
   const p = getPlacement(pid)

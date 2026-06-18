@@ -27,6 +27,7 @@ import {
   selectMany,
   setCamera,
   setNodeSizeLive,
+  swapPlacementNodes,
   togglePlacementEdge,
 } from '../store'
 
@@ -36,7 +37,8 @@ type Ring = 'yellow' | 'purple' | 'sibling' | null
 const MIN_ZOOM = 0.05
 const MAX_ZOOM = 8
 const MIN_GRAB_PX = 14 // 작은 노드도 잡히게 최소 히트 반경
-const DWELL_MS = 500 // 폴더 위에 이만큼 머물면 "그 안에 넣기" 준비
+const DWELL_MS = 300 // 폴더 위/노트 위에 이만큼 머물면 "넣기"·"맞바꾸기" 준비
+const SWAP_ANIM_MS = 240 // 맞바꿈 시 밀려나는 노트 슬라이드 시간
 
 // 이미지 캐시 (assetId -> HTMLImageElement)
 const imgCache = new Map<string, HTMLImageElement>()
@@ -60,6 +62,9 @@ export default function InfiniteCanvas() {
     let raf = 0
     let dpr = Math.min(window.devicePixelRatio || 1, 2)
     let armedFolderId: string | null = null // 드래그로 들어갈 준비된 폴더
+    let armedSwapPid: string | null = null // 노트→노트: 데이터 맞바꿀 준비된 대상 배치
+    // 맞바꿀 때 "밀려나는" 노트가 제자리로 슬라이드하는 애니메이션
+    let swapAnim: { pid: string; fromX: number; fromY: number; start: number } | null = null
     let spaceHeld = false // Space = 패닝 모드
     let marquee: { x0: number; y0: number; x1: number; y1: number } | null = null // 영역 선택/줄잇기 박스
     let dragGroup: { pid: string; x0: number; y0: number }[] | null = null // 일괄 이동용 시작좌표
@@ -151,7 +156,17 @@ export default function InfiniteCanvas() {
         const it = items[zi]
         const eds = edgesByAnchor.get(zi)
         if (eds) strokeEdges(eds)
-        const p = w2s(it.x, it.y)
+        // 맞바꿔 밀려난 노트는 원래 자리(fromX,Y)→최종 자리(it.x,y)로 슬라이드
+        let wx = it.x
+        let wy = it.y
+        if (swapAnim && swapAnim.pid === it.pid) {
+          const t = Math.min(1, (Date.now() - swapAnim.start) / SWAP_ANIM_MS)
+          const e = 1 - Math.pow(1 - t, 3) // easeOutCubic
+          wx = swapAnim.fromX + (it.x - swapAnim.fromX) * e
+          wy = swapAnim.fromY + (it.y - swapAnim.fromY) * e
+          if (t >= 1) swapAnim = null
+        }
+        const p = w2s(wx, wy)
         const hw = Math.max((it.w / 2) * c.zoom, 2)
         const hh = Math.max((it.h / 2) * c.zoom, 2)
         if (p.x + hw < -margin || p.x - hw > W + margin || p.y + hh < -margin || p.y - hh > H + margin)
@@ -178,9 +193,22 @@ export default function InfiniteCanvas() {
           ctx.textBaseline = 'bottom'
           ctx.fillText('Move here', p.x, p.y - hh - 12)
         }
+        // 노트→노트 데이터 맞바꿀 대상 강조
+        if (it.pid === armedSwapPid) {
+          ctx.strokeStyle = '#e3b341'
+          ctx.lineWidth = 3
+          ctx.beginPath()
+          ctx.ellipse(p.x, p.y, hw + 10, hh + 10, 0, 0, Math.PI * 2)
+          ctx.stroke()
+          ctx.fillStyle = '#e3b341'
+          ctx.font = '12px system-ui, sans-serif'
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'bottom'
+          ctx.fillText('Swap data', p.x, p.y - hh - 12)
+        }
       }
 
-      // 단일 선택 노드: 코너 리사이즈 핸들 + 크기 라벨 (피그마식)
+      // 단일 선택 노드: 코너 리사이즈 핸들 (크기는 우측 인스펙터에 표시되므로 캔버스 라벨은 생략)
       const solePid = getSoleSelectedPid()
       if (solePid) {
         const it = items.find((i) => i.pid === solePid)
@@ -198,16 +226,6 @@ export default function InfiniteCanvas() {
               ctx.fill()
               ctx.stroke()
             }
-          const label = `${Math.round(it.w)} × ${Math.round(it.h)}`
-          ctx.font = '11px ui-monospace, monospace'
-          ctx.textAlign = 'center'
-          ctx.textBaseline = 'middle'
-          const tw = ctx.measureText(label).width + 14
-          const ly = ctr.y + hh + 16
-          ctx.fillStyle = '#5b8cff'
-          ctx.fillRect(ctr.x - tw / 2, ly - 9, tw, 18)
-          ctx.fillStyle = '#fff'
-          ctx.fillText(label, ctr.x, ly)
         }
       }
 
@@ -382,6 +400,7 @@ export default function InfiniteCanvas() {
 
     // ── 렌더 루프 (dirty일 때만 = 배터리 절약, iOS 친화) ──
     function loop() {
+      if (swapAnim) markDirty() // 애니메이션 동안엔 매 프레임 다시 그림
       if (consumeDirty()) draw()
       raf = requestAnimationFrame(loop)
     }
@@ -422,8 +441,8 @@ export default function InfiniteCanvas() {
     let lastTapTime = 0
     let lastTapId: string | null = null
     let pinchPrev = { dist: 0, cx: 0, cy: 0 }
-    // 드래그로 폴더에 넣기 (드웰)
-    let dwellTarget: { nodeId: string; since: number } | null = null
+    // 드래그로 폴더에 넣기 / 노트끼리 데이터 맞바꾸기 (드웰)
+    let dwellTarget: { pid: string; since: number } | null = null
 
     /** 커서 아래에서 dragItem을 넣을 수 있는 폴더 찾기 (자기 자신·순환 제외) */
     function folderUnder(sx: number, sy: number, drag: SpaceItem): SpaceItem | null {
@@ -431,8 +450,24 @@ export default function InfiniteCanvas() {
       const list = itemsInCurrentSpace()
       for (let i = list.length - 1; i >= 0; i--) {
         const it = list[i]
-        if (it.pid === drag.pid || it.type !== 'folder') continue
+        if (it.pid === drag.pid || it.type !== 'folder' || it.locked) continue
         if (!canNestInto(drag.nodeId, it.nodeId)) continue
+        const pp = w2s(it.x, it.y)
+        const hw = Math.max((it.w / 2) * c.zoom, MIN_GRAB_PX)
+        const hh = Math.max((it.h / 2) * c.zoom, MIN_GRAB_PX)
+        if (Math.abs(sx - pp.x) <= hw && Math.abs(sy - pp.y) <= hh) return it
+      }
+      return null
+    }
+
+    /** 커서 아래에서 dragItem(노트)과 데이터 맞바꿀 다른 노트 찾기 (자기 자신 제외) */
+    function noteUnder(sx: number, sy: number, drag: SpaceItem): SpaceItem | null {
+      if (drag.type !== 'memo') return null
+      const c = getCamera()
+      const list = itemsInCurrentSpace()
+      for (let i = list.length - 1; i >= 0; i--) {
+        const it = list[i]
+        if (it.pid === drag.pid || it.type !== 'memo' || it.locked) continue // 잠긴 개체는 교체 대상 아님
         const pp = w2s(it.x, it.y)
         const hw = Math.max((it.w / 2) * c.zoom, MIN_GRAB_PX)
         const hh = Math.max((it.h / 2) * c.zoom, MIN_GRAB_PX)
@@ -487,6 +522,7 @@ export default function InfiniteCanvas() {
       const ry0 = Math.min(box.y0, box.y1)
       const ry1 = Math.max(box.y0, box.y1)
       return itemsInCurrentSpace().filter((it) => {
+        if (it.locked) return false // 잠긴 개체(절대개체)는 드래그 선택에 안 걸림
         const pp = w2s(it.x, it.y)
         const hw = Math.max((it.w / 2) * c.zoom, 2)
         const hh = Math.max((it.h / 2) * c.zoom, 2)
@@ -515,6 +551,7 @@ export default function InfiniteCanvas() {
         dragItem = null
         dwellTarget = null
         armedFolderId = null
+        armedSwapPid = null
         return
       }
 
@@ -551,7 +588,23 @@ export default function InfiniteCanvas() {
       }
 
       const hit = hitTest(p.x, p.y)
-      if (hit) {
+      if (hit && getPlacement(hit.pid)?.locked) {
+        // 잠긴 절대개체(배경 등): 단일클릭/드래그로는 안 잡힘. 더블클릭해야 선택.
+        const now = Date.now()
+        const isDbl = lastTapId === hit.pid && now - lastTapTime < 350
+        lastTapId = hit.pid
+        lastTapTime = now
+        if (isDbl) {
+          select(hit.pid)
+          mode = 'none'
+          dragItem = null
+          return
+        }
+        // 단일클릭 → 빈 곳처럼 마퀴(잠긴개체는 마퀴 대상에서 제외 → 결국 선택 해제)
+        mode = 'marquee'
+        dragItem = null
+        marquee = { x0: p.x, y0: p.y, x1: p.x, y1: p.y }
+      } else if (hit) {
         mode = 'drag'
         dragItem = hit
         // 선택 안 된 항목을 그냥 누르면 그것만 단독 선택(드래그 준비). Shift면 up에서 토글.
@@ -627,19 +680,24 @@ export default function InfiniteCanvas() {
         const dwx = (p.x - downAt.x) / c.zoom
         const dwy = (p.y - downAt.y) / c.zoom
         for (const g of dragGroup) moveNodeLive(g.pid, g.x0 + dwx, g.y0 + dwy)
-        // 폴더 드롭 준비는 단일 드래그일 때만 (그룹 드롭은 복잡 → 제외)
+        // 드롭 준비는 단일 드래그일 때만 (그룹 드롭은 복잡 → 제외). 폴더(넣기) 우선, 없으면 노트(맞바꾸기)
         if (dragGroup.length === 1) {
-          const over = folderUnder(p.x, p.y, dragItem)
-          if (over) {
-            if (dwellTarget?.nodeId !== over.nodeId) {
-              dwellTarget = { nodeId: over.nodeId, since: Date.now() }
+          const overFolder = folderUnder(p.x, p.y, dragItem)
+          const overNote = overFolder ? null : noteUnder(p.x, p.y, dragItem)
+          const target = overFolder ?? overNote
+          if (target) {
+            if (dwellTarget?.pid !== target.pid) {
+              dwellTarget = { pid: target.pid, since: Date.now() }
               armedFolderId = null
+              armedSwapPid = null
             } else if (Date.now() - dwellTarget.since >= DWELL_MS) {
-              armedFolderId = over.nodeId
+              if (overFolder) armedFolderId = target.nodeId
+              else armedSwapPid = target.pid
             }
           } else {
             dwellTarget = null
             armedFolderId = null
+            armedSwapPid = null
           }
         }
         markDirty()
@@ -663,6 +721,18 @@ export default function InfiniteCanvas() {
           lastTapId = dragItem.pid
         } else if (dragGroup && dragGroup.length === 1 && armedFolderId) {
           movePlacementToSpace(dragItem.pid, armedFolderId) // 폴더로 이동(참조 아님)
+          select(null)
+        } else if (dragGroup && dragGroup.length === 1 && armedSwapPid) {
+          // 노트→노트: 데이터만 맞바꿈. 끌고 온 노트는 원위치로 되돌리고 nodeId만 교환.
+          // 끌고 온 노트(데이터)는 대상 자리에 바로 들어가고, 밀려난 노트는 대상 자리→원래 자리로 슬라이드.
+          const g = dragGroup[0]
+          const target = getPlacement(armedSwapPid)
+          const fromX = target?.x ?? g.x0
+          const fromY = target?.y ?? g.y0
+          moveNodeLive(g.pid, g.x0, g.y0)
+          commitMove(g.pid)
+          swapPlacementNodes(dragItem.pid, armedSwapPid)
+          swapAnim = { pid: dragItem.pid, fromX, fromY, start: Date.now() }
           select(null)
         } else if (dragGroup) {
           for (const g of dragGroup) commitMove(g.pid) // 일괄 이동 확정
@@ -695,6 +765,7 @@ export default function InfiniteCanvas() {
       }
       dwellTarget = null
       armedFolderId = null
+      armedSwapPid = null
       dragGroup = null
       marquee = null
       linkSourcePids = []
