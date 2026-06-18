@@ -1,0 +1,109 @@
+import { useEffect } from 'react'
+import { createPortal } from 'react-dom'
+import {
+  addPhoto,
+  closeContextMenu,
+  copySelection,
+  getContextMenu,
+  getNode,
+  hasClipboard,
+  pasteClipboardAt,
+  reorderPlacement,
+  selectionCount,
+  uniqueCopySelection,
+} from '../store'
+import { fileToImage } from '../image'
+import * as S from './ContextMenu.styles'
+
+// 캔버스 우클릭 메뉴(피그마식). 항목은 대상 노드/클립보드 유무에 따라 가변.
+export default function ContextMenu({
+  onRequestDelete,
+  onCreateComponent,
+}: {
+  onRequestDelete: () => void
+  onCreateComponent: () => void
+}) {
+  const cm = getContextMenu()
+
+  // 붙여넣기: 내부 클립보드 우선, 없으면 OS 클립보드의 사진을 커서 위치에
+  async function pasteHere(wx: number, wy: number) {
+    if (hasClipboard()) {
+      pasteClipboardAt(wx, wy)
+      return
+    }
+    try {
+      const items = await navigator.clipboard.read()
+      for (const it of items) {
+        const type = it.types.find((t) => t.startsWith('image/'))
+        if (type) {
+          const blob = await it.getType(type)
+          addPhoto(await fileToImage(blob), wx, wy)
+          return
+        }
+      }
+    } catch {
+      /* 클립보드 권한 없음/미지원 → 무시 */
+    }
+  }
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeContextMenu()
+    }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [])
+
+  if (!cm) return null
+
+  const node = cm.nodeId ? getNode(cm.nodeId) : undefined
+  const run = (fn: () => void) => () => {
+    fn()
+    closeContextMenu()
+  }
+
+  // 보일 항목 수로 대략적 높이 추정 → 화면 밖으로 안 나가게 클램프 (Paste here는 항상 표시)
+  const rows = (node ? 6 : 0) + 1
+  const left = Math.min(cm.x, window.innerWidth - 200)
+  const top = Math.min(cm.y, window.innerHeight - (rows * 34 + 24))
+
+  return createPortal(
+    <S.Overlay onClick={closeContextMenu} onContextMenu={(e) => (e.preventDefault(), closeContextMenu())}>
+      <S.Menu style={{ left, top }} onClick={(e) => e.stopPropagation()}>
+        {node && (
+          <S.Item onClick={run(copySelection)}>
+            {selectionCount() > 1 ? `Copy (${selectionCount()})` : 'Copy'}
+          </S.Item>
+        )}
+        {node && (
+          <S.Item
+            onClick={run(uniqueCopySelection)}
+            title="붙여넣은 곳과 결속 — 값/사진 편집·삭제가 모두 함께 적용"
+          >
+            Unique copy
+          </S.Item>
+        )}
+        <S.Item onClick={run(() => pasteHere(cm.wx, cm.wy))}>Paste here</S.Item>
+
+        {node && (
+          <>
+            <S.Sep />
+            <S.Item onClick={run(() => cm.pid && reorderPlacement(cm.pid, 'front'))}>
+              Bring to front
+            </S.Item>
+            <S.Item onClick={run(() => cm.pid && reorderPlacement(cm.pid, 'back'))}>
+              Send to back
+            </S.Item>
+            <S.Item onClick={run(onCreateComponent)}>
+              {selectionCount() > 1 ? `Create component (${selectionCount()})` : 'Create component'}
+            </S.Item>
+            <S.Item $danger onClick={run(onRequestDelete)}>
+              Delete
+            </S.Item>
+          </>
+        )}
+      </S.Menu>
+    </S.Overlay>,
+    document.body,
+  )
+}
