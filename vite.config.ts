@@ -1,10 +1,9 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-export default defineConfig(({ command }) => ({
-  // 배포: simpraworld.com/my-universe/ 하위에 얹힘(빌드결과를 포트폴리오 public/my-universe로 복사).
-  // dev(npm run dev)는 루트(/)로 둬서 localhost:1123 그대로 동작.
-  base: command === 'build' ? '/my-universe/' : '/',
+export default defineConfig({
+  // 이 앱이 simpraworld.com 루트를 차지(마케팅 페이지 + /my-universe 캔버스 라우트 단일 배포).
+  base: '/',
   plugins: [react()],
   server: { host: true, port: 1123, strictPort: true },
   // styled-components v6 + Vite: React 사본 중복으로 "Invalid hook call" 나는 것 방지
@@ -14,4 +13,4 @@ export default defineConfig(({ command }) => ({
   optimizeDeps: {
     include: ['react', 'react-dom', 'styled-components'],
   },
-}))
+})

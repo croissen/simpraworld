@@ -23,6 +23,11 @@ export const Brand = styled.div`
   font-weight: 700;
   letter-spacing: 0.5px;
   color: #9fb4ff;
+  text-decoration: none;
+  cursor: pointer;
+  &:hover {
+    color: #c5d2ff;
+  }
 `
 
 export const Hint = styled.div`

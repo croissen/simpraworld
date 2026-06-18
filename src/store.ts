@@ -802,6 +802,17 @@ export function exportAllComponentsDoc(): SimpraWorldDoc {
   return out
 }
 
+/** 전부 초기화: 모든 데이터를 버리고 기본 샘플 세계로 되돌림(되돌릴 수 없음). */
+export function resetToSample() {
+  doc = makeSampleWorld()
+  spacePath = []
+  selection = new Set()
+  camera = { x: 0, y: 0, zoom: 1 }
+  noteEditorNodeId = null
+  selectedComponentId = null
+  changed() // 저장(IndexedDB)도 함께
+}
+
 /** .smk 폴더를 My Universe(최상위)로 가져오기. 루트 폴더 이름이 겹치면 "이름(1)". */
 export function importWorld(incoming: SimpraWorldDoc) {
   const idMap = new Map<string, string>()

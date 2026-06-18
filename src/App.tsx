@@ -1,4 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
+import { Link } from 'react-router-dom'
 import InfiniteCanvas from './canvas/InfiniteCanvas'
 import Inspector from './ui/Inspector'
 import Toolbar from './ui/Toolbar'
@@ -145,7 +146,7 @@ export default function App() {
     <S.AppRoot>
       <GlobalStyle />
       <S.Top>
-        <S.Brand>SimpraWorld</S.Brand>
+        <S.Brand as={Link} to="/" title="홈으로">SimpraWorld</S.Brand>
         <Breadcrumb />
         <Toolbar />
       </S.Top>

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   addNode,
   addPhoto,
@@ -10,15 +11,18 @@ import {
   getSelectedNode,
   getUniverseName,
   importWorld,
+  resetToSample,
   selectionCount,
   selectionToDoc,
   toggleComponents,
 } from '../store'
 import { exportSmk, importSmk, pickSmkFile, saveSmk } from '../smk'
 import { fileToImage, pickImageFile } from '../image'
+import ConfirmModal from './ConfirmModal'
 import * as S from './Toolbar.styles'
 
 export default function Toolbar() {
+  const [confirmReset, setConfirmReset] = useState(false)
   // 화면 중앙(월드 좌표)에 새 노드 생성
   function centerWorld() {
     const c = getCamera()
@@ -90,6 +94,24 @@ export default function Toolbar() {
         )
       })()}
       <S.Button onClick={onImport} title="Import a .smk into My Universe">⤒ Import</S.Button>
+      <S.Gap />
+      <S.Button
+        $danger
+        onClick={() => setConfirmReset(true)}
+        title="모든 데이터를 지우고 기본 샘플로 되돌리기"
+      >
+        ⟲ Reset
+      </S.Button>
+      {confirmReset && (
+        <ConfirmModal
+          message="모든 데이터를 지우고 기본 샘플로 되돌릴까요? 되돌릴 수 없습니다."
+          onConfirm={() => {
+            resetToSample()
+            setConfirmReset(false)
+          }}
+          onCancel={() => setConfirmReset(false)}
+        />
+      )}
     </S.Toolbar>
   )
 }
