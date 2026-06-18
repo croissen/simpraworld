@@ -10,6 +10,7 @@ import {
   pasteClipboardAt,
   reorderPlacement,
   selectionCount,
+  storePlacement,
   uniqueCopySelection,
 } from '../store'
 import { fileToImage } from '../image'
@@ -63,7 +64,7 @@ export default function ContextMenu({
   }
 
   // 보일 항목 수로 대략적 높이 추정 → 화면 밖으로 안 나가게 클램프 (Paste here는 항상 표시)
-  const rows = (node ? 6 : 0) + 1
+  const rows = (node ? 7 : 0) + 1
   const left = Math.min(cm.x, window.innerWidth - 200)
   const top = Math.min(cm.y, window.innerHeight - (rows * 34 + 24))
 
@@ -78,7 +79,7 @@ export default function ContextMenu({
         {node && (
           <S.Item
             onClick={run(uniqueCopySelection)}
-            title="붙여넣은 곳과 결속 — 값/사진 편집·삭제가 모두 함께 적용"
+            title="Bound copy — edits/deletes apply to every placement together"
           >
             Unique copy
           </S.Item>
@@ -93,6 +94,12 @@ export default function ContextMenu({
             </S.Item>
             <S.Item onClick={run(() => cm.pid && reorderPlacement(cm.pid, 'back'))}>
               Send to back
+            </S.Item>
+            <S.Item
+              onClick={run(() => cm.pid && storePlacement(cm.pid))}
+              title="Hide from canvas and keep in the library (current folder)"
+            >
+              📦 Store in library
             </S.Item>
             <S.Item onClick={run(onCreateComponent)}>
               {selectionCount() > 1 ? `Create component (${selectionCount()})` : 'Create component'}

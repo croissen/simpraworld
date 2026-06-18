@@ -9,6 +9,7 @@ import {
   getCamera,
   getComponentsOpen,
   getCurrentSpace,
+  getLibraryOpen,
   getNode,
   getSelectedNode,
   getUniverseName,
@@ -18,6 +19,7 @@ import {
   selectionCount,
   selectionToDoc,
   toggleComponents,
+  toggleLibrary,
   undo,
 } from '../store'
 import { exportSmk, importSmk, pickSmkFile, saveSmk } from '../smk'
@@ -75,8 +77,8 @@ export default function Toolbar() {
 
   return (
     <S.Toolbar>
-      <S.Button onClick={undo} disabled={!canUndo()} title="실행취소 (Ctrl+Z)">↶ Undo</S.Button>
-      <S.Button onClick={redo} disabled={!canRedo()} title="다시실행 (Ctrl+Y / Ctrl+Shift+Z)">
+      <S.Button onClick={undo} disabled={!canUndo()} title="Undo (Ctrl+Z)">↶ Undo</S.Button>
+      <S.Button onClick={redo} disabled={!canRedo()} title="Redo (Ctrl+Y / Ctrl+Shift+Z)">
         ↷ Redo
       </S.Button>
       <S.Gap />
@@ -85,6 +87,9 @@ export default function Toolbar() {
       <S.Button onClick={onPhoto} title="Add a photo from your device">+ Photo</S.Button>
       <S.Button $on={getComponentsOpen()} onClick={toggleComponents} title="Saved components — reusable folders/notes">
         ⬡ Components
+      </S.Button>
+      <S.Button $on={getLibraryOpen()} onClick={toggleLibrary} title="Library — full folder/note tree (on-canvas + stored)">
+        🗂 Library
       </S.Button>
       <S.Gap />
       {(() => {
@@ -107,13 +112,13 @@ export default function Toolbar() {
       <S.Button
         $danger
         onClick={() => setConfirmReset(true)}
-        title="모든 데이터를 지우고 기본 샘플로 되돌리기"
+        title="Erase all data and restore the default sample"
       >
         ⟲ Reset
       </S.Button>
       {confirmReset && (
         <ConfirmModal
-          message="모든 데이터를 지우고 기본 샘플로 되돌릴까요? 되돌릴 수 없습니다."
+          message="Erase all data and restore the default sample? This cannot be undone."
           onConfirm={() => {
             resetToSample()
             setConfirmReset(false)

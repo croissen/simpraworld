@@ -82,7 +82,7 @@ export default function MultiInspector({
           <S.Lock
             $on={lockedAll}
             onClick={toggleLockAll}
-            title={lockedAll ? '전체 위치 잠금 해제' : '전체 위치 잠금(움직이지 않음)'}
+            title={lockedAll ? 'Unlock all positions' : 'Lock all positions (no moving)'}
           >
             {lockedAll ? '🔒' : '🔓'}
           </S.Lock>
@@ -110,7 +110,7 @@ export default function MultiInspector({
       <S.Field>
         <S.LabelRow>
           <span>Component</span>
-          <S.AddComp onClick={onCreateComponent} title="선택한 것들을 하나의 컴포넌트로 저장(이름 입력)">
+          <S.AddComp onClick={onCreateComponent} title="Save the selection as one component (enter a name)">
             + Component
           </S.AddComp>
         </S.LabelRow>
@@ -118,16 +118,16 @@ export default function MultiInspector({
 
       <S.Mini onClick={copySelection}>Copy</S.Mini>
       {hasInternalEdges && (
-        <S.Mini onClick={() => setConfirmUnlink(true)} title="선택한 항목들끼리의 참조선만 끊기">
-          참조 해제
+        <S.Mini onClick={() => setConfirmUnlink(true)} title="Remove reference lines only between the selected items">
+          Unlink refs
         </S.Mini>
       )}
       <S.Delete onClick={onRequestDelete}>Delete {selectionCount()} items</S.Delete>
 
       {confirmUnlink && (
         <ConfirmModal
-          message="선택한 항목들끼리의 참조선을 지울까요? (다른 항목과의 참조는 유지됩니다)"
-          confirmLabel="참조 해제"
+          message="Remove reference lines between the selected items? (Links to other items are kept.)"
+          confirmLabel="Unlink"
           onConfirm={() => {
             removeEdgesAmongSelection()
             setConfirmUnlink(false)

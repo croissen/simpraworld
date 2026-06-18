@@ -134,16 +134,20 @@ export function bumpUI() {
 // ── 순수 UI 상태(저장 안 함) ─────────────────────────────────
 // 노트 편집 팝업으로 열린 노드 / 컴포넌트 패널 토글 / 미리보기로 선택된 컴포넌트
 let noteEditorNodeId: string | null = null
+let noteEditorPid: string | null = null // 노트가 열린 "자리"(교체 대상 placement)
 let componentsOpen = false
 let selectedComponentId: string | null = null
 
 export const getNoteEditorId = () => noteEditorNodeId
-export function openNote(nodeId: string) {
+export const getNoteEditorPid = () => noteEditorPid
+export function openNote(nodeId: string, pid: string | null = null) {
   noteEditorNodeId = nodeId
+  noteEditorPid = pid
   bumpUI()
 }
 export function closeNote() {
   noteEditorNodeId = null
+  noteEditorPid = null
   bumpUI()
 }
 
@@ -151,6 +155,16 @@ export const getComponentsOpen = () => componentsOpen
 export function toggleComponents() {
   componentsOpen = !componentsOpen
   if (!componentsOpen) selectedComponentId = null
+  if (componentsOpen) libraryOpen = false // 패널 하나만
+  bumpUI()
+}
+
+// 보관함(전체 트리) 패널 토글
+let libraryOpen = false
+export const getLibraryOpen = () => libraryOpen
+export function toggleLibrary() {
+  libraryOpen = !libraryOpen
+  if (libraryOpen) componentsOpen = false // 패널 하나만
   bumpUI()
 }
 
@@ -338,10 +352,64 @@ export function getAsset(id: string | undefined): Asset | undefined {
   return doc.assets.find((a) => a.id === id)
 }
 
-/** 현재 공간의 배치들 */
+/** 현재 공간의 배치들 (보관 전용 stored는 캔버스에 안 보이므로 제외) */
 export function placementsInCurrentSpace(): Placement[] {
   const space = getCurrentSpace()
+  return doc.placements.filter((p) => p.space === space && !p.stored)
+}
+
+/** 특정 공간의 모든 배치(보관 포함) — 보관함 트리용 */
+export function placementsInSpaceAll(space: string | null): Placement[] {
   return doc.placements.filter((p) => p.space === space)
+}
+
+/** 공간(폴더) 이름 라벨. 최상위는 유니버스명. */
+export function spaceLabel(space: string | null): string {
+  return space === null ? getUniverseName() : getNode(space)?.name || '?'
+}
+
+/** 보관함 "사용": 현재 공간에 노출 배치로 가져옴. 보관돼 있던 거면 노출로 전환(카메라 중앙). */
+export function useFromLibrary(nodeId: string) {
+  const n = getNode(nodeId)
+  if (!n) return
+  const space = getCurrentSpace()
+  if (space !== null && isCyclic(nodeId, space)) return // 폴더 순환 방지
+  const existing = doc.placements.find((p) => p.nodeId === nodeId && p.space === space)
+  if (existing) {
+    existing.stored = false
+    existing.x = camera.x
+    existing.y = camera.y
+    selection = new Set([existing.id])
+  } else {
+    const pl: Placement = { id: uid('p'), nodeId, space, x: camera.x, y: camera.y }
+    doc.placements.push(pl)
+    selection = new Set([pl.id])
+  }
+  changed()
+}
+
+/** 캔버스 개체를 보관함으로 보내기(숨김). 이 배치만 stored 처리 → 캔버스에서 사라지고 보관함/검색에만. */
+export function storePlacement(pid: string) {
+  const p = getPlacement(pid)
+  if (!p) return
+  p.stored = true
+  selection.delete(pid)
+  changed()
+}
+
+/** 보관함 전체(유니버스) 검색 — 이름/태그 매칭 노드 + 위치 라벨. */
+export function searchLibrary(query: string): { node: SNode; path: string }[] {
+  const q = query.trim().replace(/^#/, '').toLowerCase()
+  if (!q) return []
+  const out: { node: SNode; path: string }[] = []
+  for (const n of doc.nodes) {
+    const hit =
+      n.name.toLowerCase().includes(q) || (n.tags || []).some((t) => t.toLowerCase().includes(q))
+    if (!hit) continue
+    const first = doc.placements.find((p) => p.nodeId === n.id)
+    out.push({ node: n, path: spaceLabel(first ? first.space : null) })
+  }
+  return out
 }
 
 /** 현재 공간에 그릴 항목들 (placement + node 조인). 캔버스가 이것만 쓴다. */
@@ -668,6 +736,73 @@ export function swapPlacementNodes(pidA: string, pidB: string) {
   const tmp = a.nodeId
   a.nodeId = b.nodeId
   b.nodeId = tmp
+  changed()
+}
+
+/** 이름+본문을 소문자 단어 집합으로 (텍스트 관련도 계산용) */
+function wordSet(n?: SNode): Set<string> {
+  const s = new Set<string>()
+  if (!n) return s
+  for (const w of `${n.name} ${n.body || ''}`.toLowerCase().split(/[\s,.\-_/()[\]{}!?:;'"]+/))
+    if (w.length > 1) s.add(w)
+  return s
+}
+
+/**
+ * 현재 공간 안에서 태그(또는 이름)로 메모 검색 — 에디터 교체 후보 리스트(노출+보관 포함).
+ * 정렬: ① 기준 노트(refNodeId)와 공통 해시태그 많은 순 → ② 겹치는 텍스트(단어) 많은 순 → ③ 이름.
+ */
+export function searchNotesInCurrentSpace(query: string, refNodeId?: string): SNode[] {
+  const space = getCurrentSpace()
+  const q = query.trim().replace(/^#/, '').toLowerCase()
+  const ref = refNodeId ? getNode(refNodeId) : undefined
+  const refTags = new Set((ref?.tags || []).map((t) => t.toLowerCase()))
+  const refWords = wordSet(ref)
+  const seen = new Set<string>()
+  const scored: { n: SNode; tagScore: number; textScore: number }[] = []
+  for (const p of doc.placements) {
+    if (p.space !== space || seen.has(p.nodeId) || p.nodeId === refNodeId) continue
+    const n = getNode(p.nodeId)
+    if (!n || n.type !== 'memo') continue
+    const hit =
+      q === '' ||
+      n.name.toLowerCase().includes(q) ||
+      (n.tags || []).some((t) => t.toLowerCase().includes(q))
+    if (!hit) continue
+    seen.add(p.nodeId)
+    const tagScore = (n.tags || []).reduce((c, t) => c + (refTags.has(t.toLowerCase()) ? 1 : 0), 0)
+    let textScore = 0
+    for (const w of wordSet(n)) if (refWords.has(w)) textScore++
+    scored.push({ n, tagScore, textScore })
+  }
+  scored.sort(
+    (a, b) => b.tagScore - a.tagScore || b.textScore - a.textScore || a.n.name.localeCompare(b.n.name),
+  )
+  return scored.map((s) => s.n)
+}
+
+/**
+ * 에디터 "교체": 자리(slotPid)에 newNodeId를 노출시키고 기존 노트는 같은 공간 보관함으로.
+ * 같은 공간에 있던 newNode의 다른 배치(보통 보관됨)에 기존 노트를 넣어 맞교환(입장 바뀜).
+ * 자리의 pid는 그대로라 참조선은 유지된다.
+ */
+export function swapInNote(slotPid: string, newNodeId: string) {
+  const slot = getPlacement(slotPid)
+  if (!slot) return
+  const oldNodeId = slot.nodeId
+  if (oldNodeId === newNodeId) return
+  const space = slot.space
+  const other = doc.placements.find(
+    (p) => p.id !== slotPid && p.space === space && p.nodeId === newNodeId,
+  )
+  if (other) {
+    other.nodeId = oldNodeId // 그 배치(보관/노출 상태 유지)에 기존 노트가 들어감
+  } else {
+    // newNode가 이 공간에 배치가 없던 경우 → 기존 노트를 보관 전용으로 새로 보관
+    doc.placements.push({ id: uid('p'), nodeId: oldNodeId, space, x: slot.x, y: slot.y, stored: true })
+  }
+  slot.nodeId = newNodeId
+  slot.stored = false // 자리는 노출 상태로
   changed()
 }
 

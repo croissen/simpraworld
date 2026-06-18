@@ -44,6 +44,7 @@ export interface SNode {
   assetId?: string // 이미지 아이콘
   textColor?: string // 이름(라벨) 글자색. 없으면 기본 밝은색
   body?: string // 메모 본문(노트 더블클릭 팝업에서 편집)
+  tags?: string[] // 해시태그(연관 메모 묶기·검색·교체용). '#' 없이 저장.
   updatedAt: number
 }
 
@@ -55,6 +56,7 @@ export interface Placement {
   x: number
   y: number
   locked?: boolean // 위치 잠금: true면 드래그·좌표편집으로 안 움직임
+  stored?: boolean // 보관 전용: 캔버스에 안 그려지고 보관함/검색에만 존재(교체 대기)
 }
 
 /** 캔버스 렌더/조작용 조인 뷰: placement(위치) + node(데이터). 저장 안 됨, 런타임 계산용. */

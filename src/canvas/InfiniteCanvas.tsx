@@ -713,7 +713,7 @@ export default function InfiniteCanvas() {
           const now = Date.now()
           if (!e.shiftKey && lastTapId === dragItem.pid && now - lastTapTime < 350) {
             if (dragItem.type === 'folder') enterFolder(dragItem.nodeId)
-            else openNote(dragItem.nodeId)
+            else openNote(dragItem.nodeId, dragItem.pid)
           } else {
             select(dragItem.pid, e.shiftKey) // Shift = 토글(다중), 아니면 단독
           }

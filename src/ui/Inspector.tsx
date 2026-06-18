@@ -142,7 +142,7 @@ export default function Inspector({
       <S.Field>
         <S.LabelRow>
           <span>Name</span>
-          <S.AddComp onClick={onCreateComponent} title="이 노드를 컴포넌트로 저장(이름 입력)">
+          <S.AddComp onClick={onCreateComponent} title="Save this node as a component (enter a name)">
             + Component
           </S.AddComp>
         </S.LabelRow>
@@ -184,7 +184,7 @@ export default function Inspector({
             <S.Lock
               $on={!!pl.locked}
               onClick={() => pid && togglePlacementLock(pid)}
-              title={pl.locked ? '위치 잠금 해제' : '위치 잠금(움직이지 않음)'}
+              title={pl.locked ? 'Unlock position' : 'Lock position (no moving)'}
             >
               {pl.locked ? '🔒' : '🔓'}
             </S.Lock>

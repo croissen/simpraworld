@@ -83,9 +83,9 @@ export default function ComponentsPanel({
 
         {comps.length === 0 ? (
           <S.Empty>
-            아직 컴포넌트가 없어요.
+            No components yet.
             <br />
-            노드를 선택하고 인스펙터의 <b>+ Component</b>로 저장하면 여기에 추가됩니다.
+            Select a node and save it with <b>+ Component</b> in the inspector.
           </S.Empty>
         ) : (
           <S.List>
@@ -95,7 +95,7 @@ export default function ComponentsPanel({
                 $on={c.id === selId}
                 onClick={() => selectComponent(c.id)}
                 onDoubleClick={() => stampComponent(c.id)}
-                title="클릭=미리보기 / 더블클릭=이 공간에 생성"
+                title="Click = preview / Double-click = place in this space"
               >
                 <S.ItemMain>
                   {editingId === c.id ? (
@@ -134,7 +134,7 @@ export default function ComponentsPanel({
           </S.List>
         )}
 
-        <S.Hint>클릭 = 미리보기 · 더블클릭 = 이 공간에 생성</S.Hint>
+        <S.Hint>Click = preview · Double-click = place in this space</S.Hint>
       </S.Panel>
 
       {sel && (
@@ -142,7 +142,7 @@ export default function ComponentsPanel({
           <S.PreviewName>{sel.name}</S.PreviewName>
           <S.PreviewMeta>{meta(sel)}</S.PreviewMeta>
           {rootNode(sel.doc)?.body && <S.PreviewBody>{rootNode(sel.doc)!.body}</S.PreviewBody>}
-          <S.PreviewHint>더블클릭하면 이 공간에 그대로 생성됩니다.</S.PreviewHint>
+          <S.PreviewHint>Double-click to place it in this space.</S.PreviewHint>
         </S.Preview>
       )}
     </>

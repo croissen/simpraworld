@@ -8,6 +8,7 @@ import ViewPanel from './ui/ViewPanel'
 import ConfirmModal from './ui/ConfirmModal'
 import NoteEditor from './ui/NoteEditor'
 import ComponentsPanel from './ui/ComponentsPanel'
+import LibraryPanel from './ui/LibraryPanel'
 import ContextMenu from './ui/ContextMenu'
 import PromptModal from './ui/PromptModal'
 import type { ComponentDef } from './types'
@@ -20,6 +21,7 @@ import {
   getCamera,
   getComponents,
   getComponentsOpen,
+  getLibraryOpen,
   getNoteEditorId,
   getPlacement,
   getSelectedComponentId,
@@ -163,12 +165,13 @@ export default function App() {
     <S.AppRoot>
       <GlobalStyle />
       <S.Top>
-        <S.Brand as={Link} to="/" title="홈으로">SimpraWorld</S.Brand>
+        <S.Brand as={Link} to="/" title="Home">SimpraWorld</S.Brand>
         <Breadcrumb />
         <Toolbar />
       </S.Top>
       <InfiniteCanvas />
       {getComponentsOpen() && <ComponentsPanel onRequestDelete={setDelComp} />}
+      {getLibraryOpen() && <LibraryPanel />}
       {selCount > 0 ? (
         <Inspector onRequestDelete={requestDelete} onCreateComponent={requestCreateComponent} />
       ) : (
@@ -179,7 +182,7 @@ export default function App() {
       {delCount !== null &&
         (selectionHasShared() ? (
           <ConfirmModal
-            message="여러 곳에 연결된(유니크) 항목이 있어요. 전체에서 지울지, 여기서만 지울지 선택하세요."
+            message="Some items are linked in multiple places (shared). Delete everywhere, or just here?"
             cancelLabel="Cancel"
             altLabel="Delete all"
             confirmLabel="Delete here"
