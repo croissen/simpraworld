@@ -50,6 +50,7 @@ export default function Inspector({
 
   const n = getSelectedNode()
   if (!n) return null
+  const isPhoto = n.type === 'photo' // 사진은 글자색/컬러/Shape가 의미 없음 → 해당 항목 숨김
   const count = placementCount(n.id)
   const pid = getSoleSelectedPid()
   const pl = getPlacement(pid)
@@ -86,7 +87,7 @@ export default function Inspector({
   return (
     <S.Inspector>
       <S.Head>
-        <span>{n.type === 'folder' ? '📁 Folder' : '📝 Note'}</span>
+        <span>{n.type === 'folder' ? '📁 Folder' : n.type === 'photo' ? '🖼 Photo' : '📝 Note'}</span>
         <S.Row>
           {getCurrentSpace() !== null && pid && (
             <S.Mini
@@ -123,13 +124,15 @@ export default function Inspector({
         </S.NameRow>
       </S.Field>
 
-      <S.Field>
-        <span>Text color</span>
-        <ColorPicker
-          value={n.textColor || '#e8ecf3'}
-          onChange={(v) => updateNode(n.id, { textColor: v })}
-        />
-      </S.Field>
+      {!isPhoto && (
+        <S.Field>
+          <span>Text color</span>
+          <ColorPicker
+            value={n.textColor || '#e8ecf3'}
+            onChange={(v) => updateNode(n.id, { textColor: v })}
+          />
+        </S.Field>
+      )}
 
       {pl && (
         <S.Field>
@@ -216,31 +219,35 @@ export default function Inspector({
         </S.Row>
       </S.Field>
 
-      <S.Field>
-        <span>Shape</span>
-        <S.Row>
-          {SHAPES.map((s) => (
-            <S.Chip key={s.v} $on={n.shape === s.v} onClick={() => updateNode(n.id, { shape: s.v })}>
-              {s.label}
-            </S.Chip>
-          ))}
-        </S.Row>
-      </S.Field>
+      {!isPhoto && (
+        <S.Field>
+          <span>Shape</span>
+          <S.Row>
+            {SHAPES.map((s) => (
+              <S.Chip key={s.v} $on={n.shape === s.v} onClick={() => updateNode(n.id, { shape: s.v })}>
+                {s.label}
+              </S.Chip>
+            ))}
+          </S.Row>
+        </S.Field>
+      )}
 
-      <S.Field>
-        <span>Color</span>
-        <S.Row>
-          {COLORS.map((c) => (
-            <S.Swatch
-              key={c}
-              $on={n.color === c}
-              $color={c}
-              onClick={() => updateNode(n.id, { color: c })}
-            />
-          ))}
-        </S.Row>
-        <ColorPicker value={n.color} onChange={(v) => updateNode(n.id, { color: v })} />
-      </S.Field>
+      {!isPhoto && (
+        <S.Field>
+          <span>Color</span>
+          <S.Row>
+            {COLORS.map((c) => (
+              <S.Swatch
+                key={c}
+                $on={n.color === c}
+                $color={c}
+                onClick={() => updateNode(n.id, { color: c })}
+              />
+            ))}
+          </S.Row>
+          <ColorPicker value={n.color} onChange={(v) => updateNode(n.id, { color: v })} />
+        </S.Field>
+      )}
 
       <S.Field>
         <span>Image</span>

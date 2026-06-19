@@ -43,6 +43,7 @@ import {
   suggestComponentName,
   undo,
 } from './store'
+import { initCurrentFile, saveUniverse } from './currentFile'
 import { fileToImage } from './image'
 import { GlobalStyle } from './global.styles'
 import * as S from './App.styles'
@@ -57,6 +58,7 @@ export default function App() {
 
   useEffect(() => {
     init()
+    initCurrentFile() // 이전 세션에서 저장한 .spu 파일 핸들 복원
   }, [])
 
   // 선택 N개 삭제 요청(1개여도 확인). 컴포넌트 미리보기 선택은 별도.
@@ -70,6 +72,15 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Ctrl+S 저장 — 입력칸에 포커스가 있어도(메모 편집 중에도) 동작
+      if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault()
+        saveUniverse().then((where) => {
+          if (where) console.log('Saved: ' + where)
+        })
+        return
+      }
+
       const el = document.activeElement as HTMLElement | null
       const tag = (el?.tagName || '').toLowerCase()
       if (tag === 'input' || tag === 'textarea' || el?.isContentEditable) return

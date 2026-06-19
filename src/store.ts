@@ -58,6 +58,7 @@ let past: string[] = []
 let future: string[] = []
 let committedJSON = '' // 마지막으로 확정된 (슬림) doc 상태
 let historyReady = false // init 완료 전엔 기록하지 않음
+let dirty = false // 마지막 저장/열기/새로만들기 이후 내용이 바뀌었는지(저장 안 한 변경)
 const assetMem = new Map<string, Asset>() // id별 이미지 원본 1벌 보관(히스토리 복원용)
 export const canUndo = () => past.length > 0
 export const canRedo = () => future.length > 0
@@ -89,6 +90,7 @@ function resetHistory() {
   rememberAssets()
   committedJSON = slimDocJSON()
   historyReady = true
+  dirty = false // 저장/열기/새로만들기 등 새 기준점 → 변경 없음 상태
 }
 
 function recordHistory() {
@@ -96,6 +98,7 @@ function recordHistory() {
   rememberAssets()
   const cur = slimDocJSON()
   if (cur === committedJSON) return // doc 변화 없음(선택/공간만 바뀜) → 기록 안 함
+  dirty = true // 실제 내용 변경 발생
   past.push(committedJSON)
   if (past.length > HISTORY_LIMIT) past.shift()
   future = []
@@ -118,6 +121,7 @@ function applyDocSnapshot(json: string) {
   const liveNodes = new Set(doc.nodes.map((n) => n.id))
   spacePath = spacePath.filter((id) => liveNodes.has(id))
   version += 1
+  dirty = true // undo/redo도 저장된 상태와 달라짐
   markDirty()
   listeners.forEach((l) => l())
   scheduleSave()
@@ -147,6 +151,15 @@ export const selectionCount = () => selection.size
 export const getSoleSelectedPid = (): string | null =>
   selection.size === 1 ? [...selection][0] : null
 export const getUniverseName = () => doc.universeName || 'My Universe'
+
+/** 저장 성공 시 호출 → "변경 없음" 상태로. */
+export const markSaved = () => {
+  dirty = false
+}
+/** 마지막 저장/열기 이후 내용 변경이 있었는지. */
+export const isDirty = () => dirty
+/** 저장할 가치가 있는 미저장 작업이 있는지(변경됨 + 내용 비어있지 않음). New/Load 전 확인용. */
+export const hasUnsavedWork = () => dirty && (doc.nodes.length > 0 || doc.components.length > 0)
 export function setUniverseName(name: string) {
   doc.universeName = name.trim() || 'My Universe'
   changed()
@@ -371,6 +384,19 @@ export function pasteClipboard() {
     const { dx, dy } = findFreeOffset(space, clipboard.items, 24, 24)
     pasteUnique(clipboard.items, dx, dy)
   }
+}
+
+/** 즉시 복제: 선택을 복사해 바로 옆에 붙여넣음(모바일 — 붙여넣기 경로 없이 한 번에). */
+export function duplicateSelection() {
+  if (!selection.size) return
+  copySelection()
+  pasteClipboard()
+}
+/** 즉시 유니크 복제(결속): 같은 노드를 placement만 추가로 바로 옆에 놓음. */
+export function duplicateSelectionBound() {
+  if (!selection.size) return
+  uniqueCopySelection()
+  pasteClipboard()
 }
 
 export function getNode(id: string | null | undefined): SNode | undefined {
@@ -1141,6 +1167,11 @@ export function exportSpaceDoc(spaceId: string | null): SimpraWorldDoc {
   return out
 }
 
+/** 유니버스 전체(유니버스명·모든 공간/노드/배치/엣지·컴포넌트)를 그대로 추출 — Save용(무손실). */
+export function exportUniverseDoc(): SimpraWorldDoc {
+  return doc
+}
+
 /** 모든 컴포넌트를 한 문서로 묶어 추출 (컴포넌트 Export all). */
 export function exportAllComponentsDoc(): SimpraWorldDoc {
   const out = emptyDoc()
@@ -1158,6 +1189,34 @@ export function resetToSample() {
   selectedComponentId = null
   resetHistory() // 리셋은 되돌릴 수 없음 → 히스토리도 비움
   changed() // 저장(IndexedDB)도 함께
+}
+
+/** 새 파일(New): 빈 유니버스로 시작. 화면 상태도 초기화. */
+export function newWorld() {
+  doc = emptyDoc()
+  spacePath = []
+  selection = new Set()
+  camera = { x: 0, y: 0, zoom: 1 }
+  noteEditorNodeId = null
+  selectedComponentId = null
+  resetHistory()
+  changed()
+}
+
+/**
+ * 다른 유니버스 파일을 "열기": 현재 유니버스를 전부 버리고 incoming으로 교체(병합 아님).
+ * Load(다른 파일 열기)용. resetToSample과 같은 방식으로 화면 상태도 초기화한다.
+ */
+export function replaceWorld(incoming: SimpraWorldDoc) {
+  migrateEdgesToPlacements(incoming) // 구버전 .smk도 placement 기준으로
+  doc = { ...emptyDoc(), ...incoming }
+  spacePath = []
+  selection = new Set()
+  camera = { x: 0, y: 0, zoom: 1 }
+  noteEditorNodeId = null
+  selectedComponentId = null
+  resetHistory() // 새 문서를 연 것이므로 이전 히스토리는 버림
+  changed()
 }
 
 /** .smk 폴더를 My Universe(최상위)로 가져오기. 루트 폴더 이름이 겹치면 "이름(1)". */

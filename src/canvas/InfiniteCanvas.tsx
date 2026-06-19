@@ -715,17 +715,11 @@ export default function InfiniteCanvas() {
           }, 450)
         }
       } else if (touch) {
-        // 모바일: 빈 곳 드래그 = 공간 슬라이드(팬), 빈 곳 꾹 = "Paste here" 메뉴
+        // 모바일: 빈 곳 드래그 = 공간 슬라이드(팬). (빈 곳 꾹 "Paste here" 메뉴는 제거)
         mode = 'pan'
         dragItem = null
         longPressed = false
         clearLP()
-        const wpt = s2w(p.x, p.y)
-        lpTimer = setTimeout(() => {
-          openContextMenu({ x: p.x, y: p.y, wx: wpt.x, wy: wpt.y, pid: null, nodeId: null })
-          longPressed = true
-          markDirty()
-        }, 450)
       } else {
         // PC: 빈 곳 드래그 = 영역 선택(마퀴)
         mode = 'marquee'

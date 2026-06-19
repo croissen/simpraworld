@@ -4,6 +4,8 @@ import {
   addPhoto,
   closeContextMenu,
   copySelection,
+  duplicateSelection,
+  duplicateSelectionBound,
   getContextMenu,
   getNode,
   hasClipboard,
@@ -13,7 +15,9 @@ import {
   storePlacement,
   uniqueCopySelection,
 } from '../store'
+import { exportSelectionOrSpace } from '../currentFile'
 import { fileToImage } from '../image'
+import { useIsMobile } from '../useIsMobile'
 import * as S from './ContextMenu.styles'
 
 // 캔버스 우클릭 메뉴(피그마식). 항목은 대상 노드/클립보드 유무에 따라 가변.
@@ -25,6 +29,7 @@ export default function ContextMenu({
   onCreateComponent: () => void
 }) {
   const cm = getContextMenu()
+  const isMobile = useIsMobile()
 
   // 붙여넣기: 내부 클립보드 우선, 없으면 OS 클립보드의 사진을 커서 위치에
   async function pasteHere(wx: number, wy: number) {
@@ -64,7 +69,7 @@ export default function ContextMenu({
   }
 
   // 보일 항목 수로 대략적 높이 추정 → 화면 밖으로 안 나가게 클램프 (Paste here는 항상 표시)
-  const rows = (node ? 7 : 0) + 1
+  const rows = (node ? 8 : 0) + 1
   const left = Math.min(cm.x, window.innerWidth - 200)
   const top = Math.min(cm.y, window.innerHeight - (rows * 34 + 24))
 
@@ -72,19 +77,22 @@ export default function ContextMenu({
     <S.Overlay onClick={closeContextMenu} onContextMenu={(e) => (e.preventDefault(), closeContextMenu())}>
       <S.Menu style={{ left, top }} onClick={(e) => e.stopPropagation()}>
         {node && (
-          <S.Item onClick={run(copySelection)}>
+          <S.Item
+            onClick={run(isMobile ? duplicateSelection : copySelection)}
+            title={isMobile ? 'Duplicate right here' : 'Copy (paste with Ctrl+V or right-click)'}
+          >
             {selectionCount() > 1 ? `Copy (${selectionCount()})` : 'Copy'}
           </S.Item>
         )}
         {node && (
           <S.Item
-            onClick={run(uniqueCopySelection)}
+            onClick={run(isMobile ? duplicateSelectionBound : uniqueCopySelection)}
             title="Bound copy — edits/deletes apply to every placement together"
           >
             Unique copy
           </S.Item>
         )}
-        <S.Item onClick={run(() => pasteHere(cm.wx, cm.wy))}>Paste here</S.Item>
+        {!isMobile && <S.Item onClick={run(() => pasteHere(cm.wx, cm.wy))}>Paste here</S.Item>}
 
         {node && (
           <>
@@ -99,10 +107,18 @@ export default function ContextMenu({
               onClick={run(() => cm.pid && storePlacement(cm.pid))}
               title="Hide from canvas and keep in the library (current folder)"
             >
-              📦 Store in library
+              Store in library
             </S.Item>
             <S.Item onClick={run(onCreateComponent)}>
               {selectionCount() > 1 ? `Create component (${selectionCount()})` : 'Create component'}
+            </S.Item>
+            <S.Item
+              onClick={run(() => {
+                exportSelectionOrSpace()
+              })}
+              title="Export the selected item(s) as a .spu file"
+            >
+              {selectionCount() > 1 ? `⤓ Export (${selectionCount()})` : '⤓ Export'}
             </S.Item>
             <S.Item $danger onClick={run(onRequestDelete)}>
               Delete
