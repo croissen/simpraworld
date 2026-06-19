@@ -169,6 +169,13 @@ let noteEditorNodeId: string | null = null
 let noteEditorPid: string | null = null // 노트가 열린 "자리"(교체 대상 placement)
 let componentsOpen = false
 let selectedComponentId: string | null = null
+// 모바일: 선택만으론 인스펙터 안 띄우고, 개체의 연필 아이콘을 눌렀을 때만 편집 패널 표시
+let mobileEditOpen = false
+export const getEditOpen = () => mobileEditOpen
+export function setEditOpen(v: boolean) {
+  mobileEditOpen = v
+  bumpUI()
+}
 
 export const getNoteEditorId = () => noteEditorNodeId
 export const getNoteEditorPid = () => noteEditorPid
@@ -516,11 +523,13 @@ export function select(pid: string | null, additive = false) {
     selection = new Set([pid])
   }
   if (pid) selectedComponentId = null // 노드 선택 시 컴포넌트 미리보기 선택 해제(배타)
+  mobileEditOpen = false // 선택 바뀌면 모바일 편집 패널은 닫고 연필부터
   changed()
 }
 export function selectMany(pids: string[]) {
   selection = new Set(pids)
   if (pids.length) selectedComponentId = null
+  mobileEditOpen = false
   changed()
 }
 /** 현재 공간의 모든 항목 선택 (Ctrl+A) */
@@ -541,7 +550,10 @@ export function addNode(type: NodeType, x: number, y: number): SNode {
     updatedAt: Date.now(),
   }
   doc.nodes.push(node)
-  const pl: Placement = { id: uid('p'), nodeId: node.id, space: getCurrentSpace(), x, y }
+  const space = getCurrentSpace()
+  // 같은 자리에 중첩으로 안 쌓이게 빈 자리로 살짝 비켜줌(붙여넣기와 동일 로직)
+  const { dx, dy } = findFreeOffset(space, [{ x, y }], 0, 0)
+  const pl: Placement = { id: uid('p'), nodeId: node.id, space, x: x + dx, y: y + dy }
   doc.placements.push(pl)
   selection = new Set([pl.id])
   changed()

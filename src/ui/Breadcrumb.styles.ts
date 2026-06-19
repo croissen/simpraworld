@@ -6,7 +6,7 @@ export const Crumb = styled.nav`
   gap: 2px;
   flex: 1;
   min-width: 0;
-  overflow-x: auto;
+  overflow: hidden; /* 넘치면 스크롤 대신 …로 접음(JS가 폭 측정) */
 `
 
 export const CrumbBtn = styled.button`

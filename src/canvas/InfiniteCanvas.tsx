@@ -77,6 +77,15 @@ export default function InfiniteCanvas() {
     let spaceHeld = false // Space = 패닝 모드
     let marquee: { x0: number; y0: number; x1: number; y1: number } | null = null // 영역 선택/줄잇기 박스
     let dragGroup: { pid: string; x0: number; y0: number }[] | null = null // 일괄 이동용 시작좌표
+    let dragMovable = false // 이미 선택돼 있던 개체만 이번 드래그로 이동 가능(첫 클릭은 선택만)
+    let lpTimer: ReturnType<typeof setTimeout> | null = null // 모바일 롱프레스(꾹) → 다중선택
+    let longPressed = false
+    let multiMode = false // 모바일 다중선택 모드: 켜지면 톡 탭만으로 토글 선택
+    let lastPointerType = 'mouse'
+    const clearLP = () => {
+      if (lpTimer) clearTimeout(lpTimer)
+      lpTimer = null
+    }
     let linkSourcePids: string[] = [] // Ctrl+Alt 줄잇기의 시작(소스) 배치 pid들(다중 가능)
 
     // ── 좌표 변환 ──
@@ -159,6 +168,7 @@ export default function InfiniteCanvas() {
         items.filter((it) => isSelected(it.pid) && isShared(it.nodeId)).map((it) => it.nodeId),
       )
 
+      const selN = getSelectionSet().size // 2개 이상이면 선택 개체 가운데 초록 체크
       // 노드 — 보이는 것만 (뷰포트 컬링). 각 노드를 그리기 직전에 그 노드가 위쪽 끝점인 엣지를 깐다.
       const margin = 80
       for (let zi = 0; zi < items.length; zi++) {
@@ -189,6 +199,23 @@ export default function InfiniteCanvas() {
             ? 'sibling'
             : null
         drawNode(it, p.x, p.y, hw, hh, c.zoom, ring)
+        // 다중선택 표시: 선택 개체 가운데 초록 체크. 모바일 다중모드면 시작 개체(1개)부터 표시.
+        if ((selN > 1 || multiMode) && isSelected(it.pid)) {
+          const r = Math.max(8, Math.min(hw, hh, 14))
+          ctx.fillStyle = '#34c98a'
+          ctx.beginPath()
+          ctx.arc(p.x, p.y, r, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.strokeStyle = '#fff'
+          ctx.lineWidth = Math.max(1.6, r * 0.18)
+          ctx.lineCap = 'round'
+          ctx.lineJoin = 'round'
+          ctx.beginPath()
+          ctx.moveTo(p.x - r * 0.45, p.y + r * 0.04)
+          ctx.lineTo(p.x - r * 0.1, p.y + r * 0.4)
+          ctx.lineTo(p.x + r * 0.5, p.y - r * 0.35)
+          ctx.stroke()
+        }
         // 드래그로 들어갈 폴더 강조
         if (it.nodeId === armedFolderId) {
           ctx.strokeStyle = '#34c98a'
@@ -227,11 +254,11 @@ export default function InfiniteCanvas() {
           const hh = Math.max((it.h / 2) * c.zoom, 2)
           ctx.fillStyle = '#fff'
           ctx.strokeStyle = '#5b8cff'
-          ctx.lineWidth = 1.5
+          ctx.lineWidth = 2
           for (const cx of [ctr.x - hw, ctr.x + hw])
             for (const cy of [ctr.y - hh, ctr.y + hh]) {
               ctx.beginPath()
-              ctx.rect(cx - 4, cy - 4, 8, 8)
+              ctx.arc(cx, cy, 5.5, 0, Math.PI * 2) // 네모 → 원 핸들
               ctx.fill()
               ctx.stroke()
             }
@@ -336,11 +363,6 @@ export default function InfiniteCanvas() {
         ctx.fillStyle = n.color
         drawShape(n, x, y, hw, hh, (n.radius || 0) * zoom)
         ctx.fill()
-        // 폴더 표시(좌상단 탭)
-        if (n.type === 'folder' && zoom >= 0.3) {
-          ctx.fillStyle = 'rgba(255,255,255,0.55)'
-          ctx.fillRect(x - hw * 0.7, y - hh * 0.95, hw * 0.6, hh * 0.22)
-        }
       }
       ctx.restore()
 
@@ -595,6 +617,7 @@ export default function InfiniteCanvas() {
     }
 
     function onDown(e: PointerEvent) {
+      lastPointerType = e.pointerType || 'mouse'
       if (e.button === 2) return // 우클릭 = 컨텍스트 메뉴(onContextMenu가 처리)
       try {
         canvas.setPointerCapture(e.pointerId)
@@ -616,12 +639,14 @@ export default function InfiniteCanvas() {
         dwellTarget = null
         armedFolderId = null
         armedSwapPid = null
+        clearLP()
         return
       }
 
       moved = false
       downAt = p
       dragGroup = null
+      const touch = e.pointerType === 'touch' // 모바일: 빈 곳 = 마퀴 대신 공간 슬라이드(팬)
 
       // Ctrl+Alt = 줄잇기: 선택된 모든 배치(소스)에서 대상으로 선(클릭=연결/토글 · 박스=여러 연결)
       if (e.ctrlKey && e.altKey) {
@@ -664,17 +689,45 @@ export default function InfiniteCanvas() {
           dragItem = null
           return
         }
-        // 단일클릭 → 빈 곳처럼 마퀴(잠긴개체는 마퀴 대상에서 제외 → 결국 선택 해제)
-        mode = 'marquee'
-        dragItem = null
-        marquee = { x0: p.x, y0: p.y, x1: p.x, y1: p.y }
+        // 단일클릭 → 모바일은 팬, PC는 빈곳 마퀴
+        if (touch) {
+          mode = 'pan'
+          dragItem = null
+        } else {
+          mode = 'marquee'
+          dragItem = null
+          marquee = { x0: p.x, y0: p.y, x1: p.x, y1: p.y }
+        }
       } else if (hit) {
         mode = 'drag'
         dragItem = hit
-        // 선택 안 된 항목을 그냥 누르면 그것만 단독 선택(드래그 준비). Shift면 up에서 토글.
-        if (!e.shiftKey && !isSelected(hit.pid)) select(hit.pid)
+        // 이미 선택돼 있던 개체만 이번에 이동 가능. 아직 선택 안 됐으면 이번 누름은 "선택만"(이동 X).
+        dragMovable = isSelected(hit.pid) && !e.shiftKey
+        // 모바일: 꾹 누르면(롱프레스) 다중선택 토글
+        if (touch) {
+          longPressed = false
+          clearLP()
+          lpTimer = setTimeout(() => {
+            if (!isSelected(hit.pid)) select(hit.pid, true) // 꾹 → 선택에 추가
+            multiMode = true // 이후엔 톡 탭만으로 토글
+            longPressed = true
+            markDirty()
+          }, 450)
+        }
+      } else if (touch) {
+        // 모바일: 빈 곳 드래그 = 공간 슬라이드(팬), 빈 곳 꾹 = "Paste here" 메뉴
+        mode = 'pan'
+        dragItem = null
+        longPressed = false
+        clearLP()
+        const wpt = s2w(p.x, p.y)
+        lpTimer = setTimeout(() => {
+          openContextMenu({ x: p.x, y: p.y, wx: wpt.x, wy: wpt.y, pid: null, nodeId: null })
+          longPressed = true
+          markDirty()
+        }, 450)
       } else {
-        // 빈 곳 드래그 = 영역 선택(마퀴)
+        // PC: 빈 곳 드래그 = 영역 선택(마퀴)
         mode = 'marquee'
         dragItem = null
         marquee = { x0: p.x, y0: p.y, x1: p.x, y1: p.y }
@@ -704,7 +757,10 @@ export default function InfiniteCanvas() {
         return
       }
 
-      if (Math.hypot(p.x - downAt.x, p.y - downAt.y) > 3) moved = true
+      if (Math.hypot(p.x - downAt.x, p.y - downAt.y) > 3) {
+        moved = true
+        clearLP() // 움직이면 롱프레스 취소
+      }
 
       if (mode === 'pan') {
         const c = getCamera()
@@ -729,6 +785,7 @@ export default function InfiniteCanvas() {
         marquee.y1 = p.y
         markDirty()
       } else if (mode === 'drag' && dragItem) {
+        if (!dragMovable) return // 아직 선택 안 됐던 개체 → 이동 안 함(이번엔 선택만)
         // 첫 이동 시 일괄이동 그룹 확정: 선택에 dragItem 포함 보장
         if (!dragGroup) {
           const set = new Set(getSelectionSet())
@@ -772,17 +829,28 @@ export default function InfiniteCanvas() {
       pointers.delete(e.pointerId)
 
       if (mode === 'drag' && dragItem) {
-        if (!moved) {
-          // 탭 = 선택, 더블탭(폴더=진입/메모=노트팝업). 사진은 더블클릭해도 편집창 안 뜸.
-          const now = Date.now()
-          if (!e.shiftKey && lastTapId === dragItem.pid && now - lastTapTime < 350) {
-            if (dragItem.type === 'folder') enterFolder(dragItem.nodeId)
-            else if (dragItem.type === 'memo') openNote(dragItem.nodeId, dragItem.pid)
+        clearLP()
+        if (longPressed) {
+          longPressed = false // 롱프레스로 다중선택 완료 → 탭/이동 처리 건너뜀
+        } else if (!moved) {
+          if (multiMode) {
+            // 다중선택 모드: 톡 탭으로 토글 (추가/해제)
+            select(dragItem.pid, true)
           } else {
-            select(dragItem.pid, e.shiftKey) // Shift = 토글(다중), 아니면 단독
+            // 탭 = 선택, 더블탭(폴더=진입/메모=노트팝업). 사진은 더블클릭해도 편집창 안 뜸.
+            const now = Date.now()
+            if (!e.shiftKey && lastTapId === dragItem.pid && now - lastTapTime < 350) {
+              if (dragItem.type === 'folder') enterFolder(dragItem.nodeId)
+              else if (dragItem.type === 'memo') openNote(dragItem.nodeId, dragItem.pid)
+            } else {
+              select(dragItem.pid, e.shiftKey) // Shift = 토글(다중), 아니면 단독
+            }
+            lastTapTime = now
+            lastTapId = dragItem.pid
           }
-          lastTapTime = now
-          lastTapId = dragItem.pid
+        } else if (!dragMovable) {
+          // 아직 선택 안 됐던 개체를 끌었음 → 이동 말고 선택만(다음 누름부터 이동)
+          select(dragItem.pid, e.shiftKey)
         } else if (dragGroup && dragGroup.length === 1 && armedFolderId) {
           movePlacementToSpace(dragItem.pid, armedFolderId) // 폴더로 이동(참조 아님)
           select(null)
@@ -824,13 +892,23 @@ export default function InfiniteCanvas() {
         }
       } else if (mode === 'resize' && resizeOp) {
         commitMove(resizeOp.pid) // 크기·위치 확정(저장 + 재렌더)
-      } else if (mode === 'pan' && moved) {
-        bumpUI() // 팬 후 좌표 표시 갱신
+      } else if (mode === 'pan') {
+        clearLP()
+        if (longPressed) {
+          longPressed = false // 빈 곳 꾹 붙여넣기 완료 → 선택 유지(붙여넣은 것 선택됨)
+        } else if (moved) {
+          bumpUI() // 팬 후 좌표 표시 갱신
+        } else if (e.pointerType === 'touch') {
+          multiMode = false // 빈 곳 탭 = 다중선택 모드 종료
+          select(null) // 선택 해제
+        }
       }
       dwellTarget = null
       armedFolderId = null
       armedSwapPid = null
       dragGroup = null
+      dragMovable = false
+      clearLP()
       marquee = null
       linkSourcePids = []
       resizeOp = null
@@ -867,6 +945,7 @@ export default function InfiniteCanvas() {
     // 우클릭 = 커스텀 컨텍스트 메뉴(피그마식). 노드 위면 그 노드 선택.
     function onContextMenu(e: MouseEvent) {
       e.preventDefault()
+      if (lastPointerType === 'touch') return // 모바일 꾹누름=다중선택, 컨텍스트메뉴는 톱니바퀴 버튼으로
       const rect = canvas.getBoundingClientRect()
       const sx = e.clientX - rect.left
       const sy = e.clientY - rect.top

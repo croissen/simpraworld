@@ -190,6 +190,21 @@ export const PopColor = styled.input`
   cursor: pointer;
   flex: none;
 `
+export const PopX = styled.button`
+  flex: none;
+  align-self: flex-start;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: #2b3346;
+  color: #cdd6ea;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  &:active {
+    background: #394559;
+  }
+`
 export const PopBtn = styled.button<{ $on?: boolean }>`
   background: ${(p) => (p.$on ? '#1a2440' : '#0f1320')};
   border: 1px solid ${(p) => (p.$on ? '#5b8cff' : '#2b3346')};
@@ -231,6 +246,33 @@ export const Search = styled.input`
   outline: none;
   &:focus {
     border-color: #5b8cff;
+  }
+`
+
+/* 검색 입력 + 오른쪽 초기화(✕) 버튼 한 줄 */
+export const SearchRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  > input {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+  }
+`
+export const ClearBtn = styled.button`
+  flex: none;
+  width: 32px;
+  height: 33px;
+  border: 1px solid #d4cdb9;
+  background: #efece2;
+  color: #5a564a;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  &:active {
+    background: #e3dece;
   }
 `
 
@@ -349,6 +391,159 @@ export const Body = styled.textarea`
   font-family: inherit;
   &::placeholder {
     color: #a39e8f;
+  }
+`
+
+/* ── 모바일 전용: 헤더(작은 사진 + 제목/검색 + X) → 본문이 나머지 채움 ── */
+export const MPaper = styled.div`
+  position: relative;
+  width: 100%;
+  height: 92%;
+  background: #f3f1ea;
+  border: 1px solid #d9d4c7;
+  border-radius: 14px;
+  box-shadow: 0 18px 60px #00000066;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+`
+export const MHead = styled.div`
+  display: flex;
+  gap: 10px;
+  padding: 12px;
+  border-bottom: 1px solid #e3dece;
+`
+export const MThumb = styled.div`
+  position: relative;
+  width: 100px;
+  height: 100px;
+  flex: none;
+  border-radius: 10px;
+  background: #e2ddcd;
+  border: 1px solid #d4cdb9;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  > .ph {
+    color: #a39e8f;
+    font-size: 10px;
+  }
+`
+export const MMeta = styled.div`
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+`
+export const MTitleRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+`
+export const MResults = styled.div`
+  max-height: 34vh;
+  overflow-y: auto;
+  padding: 6px 12px;
+  border-bottom: 1px solid #e3dece;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+`
+export const MBadgeWrap = styled.div`
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 248px;
+  z-index: 20;
+`
+
+/* 사진 클릭 메뉴(삭제/교체/보기) — 화면 중앙 작은 카드 + 뒤 마스크 */
+export const PhotoMask = styled.div`
+  position: fixed;
+  inset: 0;
+  z-index: 124;
+`
+export const PhotoMenu = styled.div`
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 125;
+  min-width: 150px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: #20242ef7;
+  border: 1px solid #39435a;
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: 0 14px 40px #000a;
+  backdrop-filter: blur(8px);
+`
+export const PhotoMenuItem = styled.button<{ $danger?: boolean }>`
+  background: none;
+  border: none;
+  text-align: left;
+  color: ${(p) => (p.$danger ? '#ff9aa8' : '#dbe3f4')};
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  &:active {
+    background: #2a3550;
+  }
+`
+/* 모바일: 사진 탭하면 칸 위에 어두운 오버레이 + 가운데 3버튼 (쓰레기통/교체/눈) */
+export const MThumbMenu = styled.div`
+  position: absolute;
+  inset: 0;
+  z-index: 126;
+  background: #000000a8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+`
+export const PBtn = styled.button<{ $c?: 'del' | 'rep' | 'view' }>`
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  box-shadow: 0 1px 4px #0007;
+  background: ${(p) => (p.$c === 'del' ? '#d8453f' : p.$c === 'rep' ? '#2faa6a' : '#4a5570')};
+  &:active {
+    filter: brightness(1.15);
+  }
+`
+
+/* 모바일 사진 크게 보기 (탭하면 닫힘) */
+export const FullView = styled.div`
+  position: fixed;
+  inset: 0;
+  z-index: 130;
+  background: #000000ee;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+  img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
   }
 `
 

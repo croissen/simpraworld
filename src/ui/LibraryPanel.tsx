@@ -6,6 +6,7 @@ import {
   openNote,
   placementsInSpaceAll,
   searchLibrary,
+  toggleLibrary,
   useFromLibrary,
 } from '../store'
 import * as S from './LibraryPanel.styles'
@@ -33,7 +34,7 @@ export default function LibraryPanel() {
       return (
         <Fragment key={p.id}>
           <S.Row
-            depth={depth}
+            $depth={depth}
             $stored={!!p.stored}
             $current={isFolder && p.nodeId === currentSpace}
             onDoubleClick={() => (isFolder ? toggle(p.nodeId) : openNote(node.id))}
@@ -73,6 +74,7 @@ export default function LibraryPanel() {
 
   return (
     <S.Panel>
+      <S.CloseX onClick={toggleLibrary} title="Close">✕</S.CloseX>
       <S.Header>Library</S.Header>
       <S.Search
         value={query}

@@ -7,6 +7,7 @@ import {
   renameComponent,
   selectComponent,
   stampComponent,
+  toggleComponents,
 } from '../store'
 import type { ComponentDef, SimpraWorldDoc } from '../types'
 import { exportSmk, importSmk, pickSmkFile, saveSmk } from '../smk'
@@ -69,6 +70,7 @@ export default function ComponentsPanel({
   return (
     <>
       <S.Panel>
+        <S.CloseX onClick={toggleComponents} title="Close">✕</S.CloseX>
         <S.Header>
           <span>Components</span>
           <S.HeaderBtns>

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   DEFAULT_BADGE_SIZE,
+  addAsset,
   closeNote,
   getAsset,
   getNode,
@@ -11,7 +12,11 @@ import {
   swapInNote,
   updateNode,
 } from '../store'
+import { uid } from '../types'
 import type { SNode } from '../types'
+import { fileToImage, pickImageFile } from '../image'
+import { useIsMobile } from '../useIsMobile'
+import ConfirmModal from './ConfirmModal'
 import * as S from './NoteEditor.styles'
 
 // 배지 편집 팝업: 내용(줄바꿈) / 폰트크기(직접 입력) / 글자색 / 배경색(+배경 없음).
@@ -48,14 +53,14 @@ function BadgeEditor({ node, onClose }: { node: SNode; onClose: () => void }) {
   }
 
   return (
-    <S.BadgePop>
+    <S.BadgePop onClick={(e) => e.stopPropagation()}>
       <S.PopRow>
         <S.PopArea
           ref={areaRef}
           rows={1}
           autoFocus
           value={text}
-          placeholder="badge text (Enter = new line)"
+          placeholder="badge text"
           onChange={(e) => {
             setText(e.target.value)
             grow(e.target)
@@ -67,6 +72,9 @@ function BadgeEditor({ node, onClose }: { node: SNode; onClose: () => void }) {
             }
           }}
         />
+        <S.PopX onClick={onClose} title="Close">
+          ✕
+        </S.PopX>
       </S.PopRow>
       <S.PopRow>
         <S.PopLabel>Size</S.PopLabel>
@@ -114,11 +122,18 @@ function parseTags(text: string): string[] {
 
 // 메모 편집 팝업: 왼쪽=정사각 사진+교체+태그검색, 오른쪽=제목/본문/태그.
 export default function NoteEditor({ nodeId }: { nodeId: string }) {
+  const isMobile = useIsMobile()
   const slotPid = getNoteEditorPid()
   const [viewedId, setViewedId] = useState(nodeId)
   const [query, setQuery] = useState('')
   const [tagText, setTagText] = useState('')
   const [editingBadge, setEditingBadge] = useState(false)
+  const [editLocked, setEditLocked] = useState(true) // 모바일: 기본 읽기전용(키패드 안 뜸)
+  const [photoMenu, setPhotoMenu] = useState(false) // PC 사진 클릭 메뉴
+  const [menuPos, setMenuPos] = useState({ x: 0, y: 0 }) // 메뉴를 띄울 위치(사진박스 중앙)
+  const [confirmDel, setConfirmDel] = useState(false)
+  const [viewPhoto, setViewPhoto] = useState(false) // 모바일 사진 크게보기
+  const thumbRef = useRef<HTMLDivElement>(null)
 
   // 다른 노트로 새로 열리면 미리보기/검색 초기화
   useEffect(() => {
@@ -126,10 +141,12 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
     setQuery('')
   }, [nodeId])
 
-  // 보고 있는 노트가 바뀌면 입력 중이던 태그·배지 편집 상태 초기화
+  // 보고 있는 노트가 바뀌면 입력 중이던 태그·배지 편집 상태 초기화 + 다시 읽기전용
   useEffect(() => {
     setTagText('')
     setEditingBadge(false)
+    setEditLocked(true)
+    setPhotoMenu(false)
   }, [viewedId])
 
   useEffect(() => {
@@ -152,51 +169,303 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
     setTagText('')
   }
   const removeTag = (t: string) => updateNode(n.id, { tags: (n.tags || []).filter((x) => x !== t) })
+  // 교체 실행 + 검색란 비우기(스와이프로 교체했으면 검색어 초기화)
+  const doSwap = () => {
+    if (!slotPid) return
+    swapInNote(slotPid, viewedId)
+    setQuery('')
+  }
 
   // 자리에 실제로 꽂힌 노트 (교체 가능 여부 판단용)
   const slotNodeId = slotPid ? getPlacement(slotPid)?.nodeId : nodeId
   const canSwap = !!slotPid && viewedId !== slotNodeId
   const asset = n.assetId ? getAsset(n.assetId) : undefined
   const results = searchNotesInCurrentSpace(query, viewedId)
+  const searching = !!query.trim()
+  // 검색 중이면(수정 안 하는 상태) 편집 잠금. 제목/본문/태그 입력 잠금(검색·배지는 항상 가능)
+  const locked = isMobile && (editLocked || searching)
+  const backToNote = () => {
+    setQuery('')
+    setViewedId(slotNodeId || nodeId) // 원래 노트로 돌아오기
+  }
+
+  // 검색 입력 + 오른쪽 초기화(✕) 버튼
+  const searchRow = (
+    <S.SearchRow>
+      <S.Search
+        value={query}
+        placeholder="Search this space by #tag"
+        onChange={(e) => setQuery(e.target.value)}
+      />
+      {searching && (
+        <S.ClearBtn onClick={() => setQuery('')} title="Clear search">
+          🗑
+        </S.ClearBtn>
+      )}
+    </S.SearchRow>
+  )
+
+  // 사진 교체: 이미지 골라 새 에셋으로 교체
+  const replacePhoto = async () => {
+    setPhotoMenu(false)
+    const file = await pickImageFile()
+    if (!file) return
+    const img = await fileToImage(file)
+    const a = { id: uid('a'), kind: 'image' as const, mime: img.mime, thumb: img.thumb }
+    addAsset(a)
+    updateNode(n.id, { assetId: a.id, shape: 'image' })
+  }
+  const deletePhoto = () => {
+    updateNode(n.id, { assetId: undefined })
+    setConfirmDel(false)
+  }
+
+  // 사진 클릭 메뉴 / 삭제 확인 / 크게보기 (PC·모바일 공통 오버레이)
+  const extras = (
+    <>
+      {photoMenu && isMobile && <S.PhotoMask onClick={() => setPhotoMenu(false)} />}
+      {photoMenu && !isMobile && (
+        <>
+          <S.PhotoMask onClick={() => setPhotoMenu(false)} />
+          <S.PhotoMenu style={{ left: menuPos.x, top: menuPos.y }}>
+            <S.PhotoMenuItem onClick={replacePhoto}>{asset ? 'Replace image' : 'Add image'}</S.PhotoMenuItem>
+            {asset && (
+              <S.PhotoMenuItem
+                $danger
+                onClick={() => {
+                  setPhotoMenu(false)
+                  setConfirmDel(true)
+                }}
+              >
+                Delete image
+              </S.PhotoMenuItem>
+            )}
+          </S.PhotoMenu>
+        </>
+      )}
+      {confirmDel && (
+        <ConfirmModal
+          message="Delete this image?"
+          confirmLabel="Delete"
+          onConfirm={deletePhoto}
+          onCancel={() => setConfirmDel(false)}
+        />
+      )}
+      {viewPhoto && asset && (
+        <S.FullView onClick={() => setViewPhoto(false)}>
+          <img src={asset.thumb} alt={n.name} />
+        </S.FullView>
+      )}
+    </>
+  )
+
+  // 배지 미리보기(편집 아닐 때): 있으면 칩, 없으면 흰 점. (사진 메뉴와 안 겹치게 stopPropagation)
+  const badgeChip = editingBadge ? null : n.badge?.trim() ? (
+    <S.Badge
+      onClick={(e) => {
+        e.stopPropagation()
+        setEditingBadge(true)
+      }}
+      title="Edit badge"
+      style={{
+        background: n.badgeBg === 'none' ? 'transparent' : n.badgeBg || '#e3b341',
+        color: n.badgeColor || (n.badgeBg === 'none' ? '#fff' : '#1a1300'),
+        textShadow: n.badgeBg === 'none' ? '0 1px 3px #000' : 'none',
+      }}
+    >
+      {n.badge}
+    </S.Badge>
+  ) : (
+    <S.BadgeDot
+      onClick={(e) => {
+        e.stopPropagation()
+        setEditingBadge(true)
+      }}
+      title="Add a badge"
+    />
+  )
+
+  const tagBar = (
+    <S.TagBar>
+      {(n.tags || []).map((t) => (
+        <S.Tag key={t}>
+          #{t}
+          <button onClick={() => removeTag(t)} title="Remove">
+            ×
+          </button>
+        </S.Tag>
+      ))}
+      <S.TagInput
+        value={tagText}
+        readOnly={locked}
+        placeholder={n.tags?.length ? 'Add tag…' : 'Type #tag then Enter'}
+        onChange={(e) => setTagText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ',') {
+            e.preventDefault()
+            e.stopPropagation()
+            addTags()
+          } else if (e.key === 'Backspace' && !tagText && n.tags?.length) {
+            e.preventDefault()
+            removeTag(n.tags[n.tags.length - 1])
+          }
+        }}
+      />
+    </S.TagBar>
+  )
+
+  // ── 모바일 레이아웃: [작은 사진 | 제목/검색 + X] → 본문이 나머지 채움 ──
+  if (isMobile) {
+    return createPortal(
+      <S.Overlay>
+        <S.MPaper>
+          {editingBadge && (
+            <S.MBadgeWrap>
+              <BadgeEditor node={n} onClose={() => setEditingBadge(false)} />
+            </S.MBadgeWrap>
+          )}
+          <S.MHead>
+            <S.MThumb onClick={() => setPhotoMenu(true)} title="Photo">
+              {asset ? <img src={asset.thumb} alt={n.name} /> : <span className="ph">No image</span>}
+              {badgeChip}
+              {photoMenu && (
+                <S.MThumbMenu
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setPhotoMenu(false)
+                  }}
+                >
+                  {asset && (
+                    <S.PBtn
+                      $c="del"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setPhotoMenu(false)
+                        setConfirmDel(true)
+                      }}
+                      title="Delete"
+                    >
+                      🗑
+                    </S.PBtn>
+                  )}
+                  <S.PBtn $c="rep" onClick={(e) => (e.stopPropagation(), replacePhoto())} title="Replace">
+                    🔄
+                  </S.PBtn>
+                  {asset && (
+                    <S.PBtn
+                      $c="view"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setPhotoMenu(false)
+                        setViewPhoto(true)
+                      }}
+                      title="View"
+                    >
+                      👁
+                    </S.PBtn>
+                  )}
+                </S.MThumbMenu>
+              )}
+            </S.MThumb>
+            <S.MMeta>
+              <S.MTitleRow>
+                <S.Title
+                  value={n.name}
+                  placeholder="Untitled"
+                  readOnly={locked}
+                  onChange={(e) => updateNode(n.id, { name: e.target.value })}
+                />
+                {searching ? (
+                  // 검색 중 = 수정 안 함 → 연필/눈 대신 "노트로 되돌아오기"
+                  <S.Revert onClick={backToNote} title="Back to note">
+                    ↩
+                  </S.Revert>
+                ) : (
+                  <>
+                    {canSwap && slotNodeId && (
+                      <S.Revert onClick={() => setViewedId(slotNodeId)} title="Back to original">
+                        ↩
+                      </S.Revert>
+                    )}
+                    <S.Revert
+                      onClick={() => setEditLocked((v) => !v)}
+                      title={editLocked ? 'Edit' : 'View (lock editing)'}
+                    >
+                      {editLocked ? '✎' : '👁'}
+                    </S.Revert>
+                  </>
+                )}
+                <S.Close onClick={closeNote} title="Close">
+                  ✕
+                </S.Close>
+              </S.MTitleRow>
+              {searchRow}
+              {canSwap && <S.SwapBtn onClick={doSwap}>⇄ Swap in</S.SwapBtn>}
+            </S.MMeta>
+          </S.MHead>
+
+          {query.trim() && (
+            <S.MResults>
+              {results.length === 0 ? (
+                <S.Empty>No results</S.Empty>
+              ) : (
+                results.map((r) => {
+                  const ra = r.assetId ? getAsset(r.assetId) : undefined
+                  return (
+                    <S.ResultItem key={r.id} $on={r.id === viewedId} onClick={() => setViewedId(r.id)}>
+                      {ra ? <img className="t" src={ra.thumb} alt="" /> : <span className="t" />}
+                      <span className="m">
+                        <div className="nm">{r.name || 'Untitled'}</div>
+                        {r.tags?.length ? (
+                          <div className="tg">{r.tags.map((t) => '#' + t).join(' ')}</div>
+                        ) : null}
+                      </span>
+                    </S.ResultItem>
+                  )
+                })
+              )}
+            </S.MResults>
+          )}
+
+          <S.Body
+            value={n.body ?? ''}
+            placeholder={locked ? 'Tap ✎ to edit' : 'Write your note…'}
+            readOnly={locked}
+            onChange={(e) => updateNode(n.id, { body: e.target.value })}
+          />
+          {tagBar}
+        </S.MPaper>
+        {extras}
+      </S.Overlay>,
+      document.body,
+    )
+  }
 
   return createPortal(
     <S.Overlay>
       <S.Paper>
         <S.Left>
-          <S.Thumb>
+          <S.Thumb
+            ref={thumbRef}
+            onClick={() => {
+              const r = thumbRef.current?.getBoundingClientRect()
+              if (r) setMenuPos({ x: r.left + r.width / 2, y: r.top + r.height / 2 })
+              setPhotoMenu(true)
+            }}
+            title="Photo: replace / delete"
+          >
             {asset ? <img src={asset.thumb} alt={n.name} /> : <span className="ph">No image</span>}
-            {/* 배지 미리보기: 고른 색/배경 그대로 */}
-            {n.badge?.trim() && !editingBadge && (
-              <S.Badge
-                onClick={() => setEditingBadge(true)}
-                title="Edit badge"
-                style={{
-                  background: n.badgeBg === 'none' ? 'transparent' : n.badgeBg || '#e3b341',
-                  color: n.badgeColor || (n.badgeBg === 'none' ? '#fff' : '#1a1300'),
-                  // 메모 상세 안에서는 배지 크기 고정(캔버스에서만 badgeSize 반영)
-                  textShadow: n.badgeBg === 'none' ? '0 1px 3px #000' : 'none',
-                }}
-              >
-                {n.badge}
-              </S.Badge>
-            )}
-            {!n.badge?.trim() && !editingBadge && (
-              <S.BadgeDot onClick={() => setEditingBadge(true)} title="Add a badge" />
-            )}
+            {badgeChip}
             {editingBadge && <BadgeEditor node={n} onClose={() => setEditingBadge(false)} />}
           </S.Thumb>
           <S.SwapBtn
             disabled={!canSwap}
-            onClick={() => slotPid && swapInNote(slotPid, viewedId)}
+            onClick={doSwap}
             title={canSwap ? 'Bring this note into the slot; the current one goes to the library' : 'Search and pick another note to swap in'}
           >
             ⇄ Swap in
           </S.SwapBtn>
-          <S.Search
-            value={query}
-            placeholder="Search this space by #tag"
-            onChange={(e) => setQuery(e.target.value)}
-          />
+          {searchRow}
           <S.Results>
             {results.length === 0 ? (
               <S.Empty>{query ? 'No results' : 'No other notes in this space'}</S.Empty>
@@ -271,6 +540,7 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
           </S.TagBar>
         </S.Right>
       </S.Paper>
+      {extras}
     </S.Overlay>,
     document.body,
   )

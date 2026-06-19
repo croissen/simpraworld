@@ -77,11 +77,13 @@ export default function Toolbar() {
 
   return (
     <S.Toolbar>
-      <S.Button onClick={undo} disabled={!canUndo()} title="Undo (Ctrl+Z)">↶ Undo</S.Button>
-      <S.Button onClick={redo} disabled={!canRedo()} title="Redo (Ctrl+Y / Ctrl+Shift+Z)">
-        ↷ Redo
-      </S.Button>
-      <S.Gap />
+      <S.UndoGroup>
+        <S.Button onClick={undo} disabled={!canUndo()} title="Undo (Ctrl+Z)">↶ Undo</S.Button>
+        <S.Button onClick={redo} disabled={!canRedo()} title="Redo (Ctrl+Y / Ctrl+Shift+Z)">
+          ↷ Redo
+        </S.Button>
+        <S.Gap />
+      </S.UndoGroup>
       <S.Button onClick={() => addNode('folder', centerWorld().x, centerWorld().y)}>+ Folder</S.Button>
       <S.Button onClick={() => addNode('memo', centerWorld().x, centerWorld().y)}>+ Note</S.Button>
       <S.Button onClick={onPhoto} title="Add a photo from your device">+ Photo</S.Button>

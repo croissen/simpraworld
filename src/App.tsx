@@ -1,9 +1,12 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { Link } from 'react-router-dom'
 import InfiniteCanvas from './canvas/InfiniteCanvas'
 import Inspector from './ui/Inspector'
 import Toolbar from './ui/Toolbar'
 import Breadcrumb from './ui/Breadcrumb'
+import BrandButton from './ui/BrandButton'
+import MobileHeader from './ui/MobileHeader'
+import ObjectActions from './ui/ObjectActions'
+import { useIsMobile } from './useIsMobile'
 import ViewPanel from './ui/ViewPanel'
 import ConfirmModal from './ui/ConfirmModal'
 import NoteEditor from './ui/NoteEditor'
@@ -21,6 +24,7 @@ import {
   getCamera,
   getComponents,
   getComponentsOpen,
+  getEditOpen,
   getLibraryOpen,
   getNoteEditorId,
   getPlacement,
@@ -49,6 +53,7 @@ export default function App() {
   const [delCount, setDelCount] = useState<number | null>(null) // 노드 삭제 확인(선택 N개)
   const [delComp, setDelComp] = useState<ComponentDef | null>(null)
   const [compName, setCompName] = useState<string | null>(null) // 컴포넌트 이름 입력 프롬프트
+  const isMobile = useIsMobile()
 
   useEffect(() => {
     init()
@@ -164,16 +169,30 @@ export default function App() {
   return (
     <S.AppRoot>
       <GlobalStyle />
-      <S.Top>
-        <S.Brand as={Link} to="/" title="Home">SimpraWorld</S.Brand>
-        <Breadcrumb />
-        <Toolbar />
-      </S.Top>
+      {isMobile ? (
+        <S.MobileTop>
+          <MobileHeader />
+          <S.MobileTools>
+            <Toolbar />
+          </S.MobileTools>
+        </S.MobileTop>
+      ) : (
+        <S.Top>
+          <BrandButton label="SimpraWorld" />
+          <Breadcrumb />
+          <Toolbar />
+        </S.Top>
+      )}
       <InfiniteCanvas />
       {getComponentsOpen() && <ComponentsPanel onRequestDelete={setDelComp} />}
       {getLibraryOpen() && <LibraryPanel />}
       {selCount > 0 ? (
-        <Inspector onRequestDelete={requestDelete} onCreateComponent={requestCreateComponent} />
+        // 모바일은 개체의 액션 버튼을 눌러야(editOpen) 편집 패널이 뜸. PC는 선택 즉시.
+        !isMobile || getEditOpen() ? (
+          <Inspector onRequestDelete={requestDelete} onCreateComponent={requestCreateComponent} />
+        ) : (
+          <ObjectActions />
+        )
       ) : (
         <ViewPanel />
       )}

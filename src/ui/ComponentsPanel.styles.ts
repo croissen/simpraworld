@@ -16,6 +16,11 @@ export const Panel = styled.aside`
   display: flex;
   flex-direction: column;
   gap: 8px;
+
+  @media (max-width: 640px) {
+    width: auto;
+    right: 12px;
+  }
 `
 
 export const Header = styled.div`
@@ -24,6 +29,25 @@ export const Header = styled.div`
   gap: 8px;
   color: #e8ecf3;
   font-weight: 600;
+`
+
+export const CloseX = styled.button`
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+  width: 26px;
+  height: 26px;
+  background: #1b2030;
+  border: 1px solid #2b3346;
+  color: #aeb8cc;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 13px;
+  &:hover {
+    color: #fff;
+    border-color: #41506e;
+  }
 `
 
 export const HeaderBtns = styled.div`
@@ -134,6 +158,10 @@ export const Preview = styled.div`
   border-radius: 12px;
   padding: 12px;
   box-shadow: 0 12px 40px #00000066;
+
+  @media (max-width: 640px) {
+    display: none; /* 모바일에선 미리보기 카드 숨김(공간 부족) */
+  }
 `
 export const PreviewName = styled.div`
   color: #e8ecf3;

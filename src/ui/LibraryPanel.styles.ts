@@ -16,11 +16,35 @@ export const Panel = styled.aside`
   display: flex;
   flex-direction: column;
   gap: 8px;
+
+  @media (max-width: 640px) {
+    width: auto;
+    right: 12px;
+  }
 `
 
 export const Header = styled.div`
   color: #e8ecf3;
   font-weight: 600;
+`
+
+export const CloseX = styled.button`
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+  width: 26px;
+  height: 26px;
+  background: #1b2030;
+  border: 1px solid #2b3346;
+  color: #aeb8cc;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 13px;
+  &:hover {
+    color: #fff;
+    border-color: #41506e;
+  }
 `
 
 export const Search = styled.input`
@@ -46,12 +70,12 @@ export const Tree = styled.div`
   flex-direction: column;
 `
 
-export const Row = styled.div<{ depth?: number; $stored?: boolean; $current?: boolean }>`
+export const Row = styled.div<{ $depth?: number; $stored?: boolean; $current?: boolean }>`
   display: flex;
   align-items: center;
   gap: 5px;
   padding: 4px 6px;
-  padding-left: ${(p) => (p.depth || 0) * 14 + 6}px;
+  padding-left: ${(p) => (p.$depth || 0) * 14 + 6}px;
   border-radius: 7px;
   cursor: default;
   opacity: ${(p) => (p.$stored ? 0.6 : 1)};
