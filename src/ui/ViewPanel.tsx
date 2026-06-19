@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { bumpUI, getCamera, setCamera } from '../store'
 import * as S from './ViewPanel.styles'
 
@@ -9,6 +9,17 @@ export default function ViewPanel() {
   const [xv, setXv] = useState('0')
   const [yv, setYv] = useState('0')
   const c = getCamera()
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  // 다른 곳(캔버스 등) 클릭하면 좌표 패널 닫기(취소)
+  useEffect(() => {
+    if (!open) return
+    const h = (e: PointerEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    window.addEventListener('pointerdown', h)
+    return () => window.removeEventListener('pointerdown', h)
+  }, [open])
 
   const openEdit = () => {
     setXv(String(Math.round(c.x)))
@@ -38,7 +49,7 @@ export default function ViewPanel() {
   }
 
   return (
-    <S.Wrap>
+    <S.Wrap ref={wrapRef}>
       <S.Card>
         <S.Head onClick={() => setOpen(false)} title="Collapse">
           <span>◎ center</span>

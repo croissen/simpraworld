@@ -17,6 +17,11 @@ export const Toolbar = styled.div`
     &::-webkit-scrollbar {
       display: none;
     }
+    /* 메뉴 spans: UndoGroup(1·숨김)·+(2)·📄(3)·⋯(4). 첫 메뉴(+, 2번)만 margin-left:auto로
+       그룹 전체를 우측으로 밀고, 뒤 메뉴(3·4)는 0으로 붙여 가운데 빈틈 제거 */
+    & > span:nth-of-type(n + 3) {
+      margin-left: 0;
+    }
   }
 `
 
@@ -42,11 +47,9 @@ export const Overflow = styled.span<{ $align?: 'left' | 'right' }>`
   align-items: center;
   gap: 6px;
   flex: none;
+  /* $align='right'면 margin-left:auto로 우측 정렬. 모바일 가로스크롤에서도 auto는
+     공간이 남으면 오른쪽으로 밀고, 넘치면 0으로 접혀 스크롤이 유지됨(justify-content와 달리). */
   margin-left: ${(p) => (p.$align === 'right' ? 'auto' : '0')};
-
-  @media (max-width: 640px) {
-    margin-left: 0;
-  }
 `
 
 /* 펼쳐지는 트레이 — 닫힘: 폭 0·투명, 열림: 슬라이드+페이드. overflow:hidden으로 폭 전환을 부드럽게 */

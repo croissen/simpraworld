@@ -44,7 +44,7 @@ export const MobileTop = styled.header`
 
 export const MobileTools = styled.div`
   display: flex;
-  padding: 0 8px 6px;
+  padding: 0 8px 6px 0;
 `
 
 export const Brand = styled.button<{ $armed?: boolean }>`
