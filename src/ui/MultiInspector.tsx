@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import {
   copySelection,
   getPlacement,
@@ -7,11 +6,14 @@ import {
   reorderPlacement,
   selectionCount,
   selectionHasInternalEdges,
+  selectionInternalEdges,
+  setEdgeColorAmongSelection,
   setPlacementXY,
   togglePlacementLock,
+  toggleEdgeBoldAmongSelection,
 } from '../store'
 import CommitInput from './CommitInput'
-import ConfirmModal from './ConfirmModal'
+import ColorPicker from './ColorPicker'
 import * as S from './Inspector.styles'
 
 // 다중 선택 시 우측 패널: Position(그룹 일괄 이동) / Component / Copy / Delete.
@@ -22,12 +24,14 @@ export default function MultiInspector({
   onRequestDelete: () => void
   onCreateComponent: () => void
 }) {
-  const [confirmUnlink, setConfirmUnlink] = useState(false)
   const pids = getSelection()
   const pls = pids.map((pid) => getPlacement(pid)).filter((p): p is NonNullable<typeof p> => !!p)
   if (!pls.length) return null
 
-  const hasInternalEdges = selectionHasInternalEdges() // 선택끼리 연결된 참조선이 있을 때만 버튼 노출
+  const hasInternalEdges = selectionHasInternalEdges() // 선택끼리 연결된 참조선이 있을 때만 섹션 노출
+  const internalEdges = hasInternalEdges ? selectionInternalEdges() : []
+  const edgesBold = internalEdges.length > 0 && internalEdges.every((e) => e.bold)
+  const edgeColor = internalEdges.find((e) => e.color)?.color || '#96aad2'
 
   // 그룹 기준점 = 좌상단(min x, min y). 편집하면 전체를 델타만큼 이동.
   const minX = Math.round(Math.min(...pls.map((p) => p.x)))
@@ -116,25 +120,27 @@ export default function MultiInspector({
         </S.LabelRow>
       </S.Field>
 
-      <S.Mini onClick={copySelection}>Copy</S.Mini>
       {hasInternalEdges && (
-        <S.Mini onClick={() => setConfirmUnlink(true)} title="Remove reference lines only between the selected items">
-          Unlink refs
-        </S.Mini>
+        <S.Field>
+          <span>References</span>
+          <S.Row>
+            <S.Chip onClick={removeEdgesAmongSelection} title="Remove reference lines between the selected items">
+              Unlink
+            </S.Chip>
+            <S.Chip
+              $on={edgesBold}
+              onClick={toggleEdgeBoldAmongSelection}
+              title="Emphasize lines (thicker)"
+            >
+              Bold
+            </S.Chip>
+          </S.Row>
+          <ColorPicker value={edgeColor} onChange={setEdgeColorAmongSelection} />
+        </S.Field>
       )}
-      <S.Delete onClick={onRequestDelete}>Delete {selectionCount()} items</S.Delete>
 
-      {confirmUnlink && (
-        <ConfirmModal
-          message="Remove reference lines between the selected items? (Links to other items are kept.)"
-          confirmLabel="Unlink"
-          onConfirm={() => {
-            removeEdgesAmongSelection()
-            setConfirmUnlink(false)
-          }}
-          onCancel={() => setConfirmUnlink(false)}
-        />
-      )}
+      <S.Mini onClick={copySelection}>Copy</S.Mini>
+      <S.Delete onClick={onRequestDelete}>Delete {selectionCount()} items</S.Delete>
     </S.Inspector>
   )
 }

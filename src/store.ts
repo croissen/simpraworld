@@ -11,6 +11,8 @@ export interface Camera {
 
 const DB_KEY = 'simpraworld:doc:v7' // v7: 영어화된 기본세계(깨끗 재생성)
 
+export const DEFAULT_BADGE_SIZE = 14 // 배지 기본 폰트 크기(월드 단위) — 여기 한 곳만 고치면 됨
+
 // ── 내부 상태 ────────────────────────────────────────────────
 let doc: SimpraWorldDoc = emptyDoc()
 let camera: Camera = { x: 0, y: 0, zoom: 1 }
@@ -49,26 +51,50 @@ function changed() {
 }
 
 // ── 실행취소/다시실행 (Undo/Redo) ────────────────────────────
-// doc 전체 스냅샷(JSON)을 스택에 쌓는다. changed()가 호출될 때 doc이 실제로
-// 바뀐 경우에만 1건 기록(선택만 바뀐 변경 등은 doc이 같아 무시됨).
+// 구조(노드/배치/엣지)만 스냅샷으로 쌓는다. 이미지(asset.thumb 등 base64)는 무거우니
+// 스냅샷에서 떼어내고(assetMem에 1벌만 보관) 복원 시 다시 채운다 → 메모리 폭발(OOM) 방지.
 const HISTORY_LIMIT = 30
 let past: string[] = []
 let future: string[] = []
-let committedJSON = '' // 마지막으로 확정된 doc 상태
+let committedJSON = '' // 마지막으로 확정된 (슬림) doc 상태
 let historyReady = false // init 완료 전엔 기록하지 않음
+const assetMem = new Map<string, Asset>() // id별 이미지 원본 1벌 보관(히스토리 복원용)
 export const canUndo = () => past.length > 0
 export const canRedo = () => future.length > 0
+
+// 현재 doc/컴포넌트의 모든 에셋을 id로 기억(복원 때 다시 채울 수 있게)
+function rememberAssets() {
+  for (const a of doc.assets) assetMem.set(a.id, a)
+  for (const c of doc.components) for (const a of c.doc.assets) assetMem.set(a.id, a)
+}
+// 무거운 이미지 데이터를 뺀 슬림 에셋(스냅샷용)
+const slimAsset = (a: Asset): Asset => ({ ...a, thumb: '', original: undefined })
+// 다시 채우기: id로 원본 thumb/original 복구
+function fatAsset(a: Asset): Asset {
+  const full = assetMem.get(a.id)
+  return full ? { ...a, thumb: full.thumb, original: full.original } : a
+}
+function slimDocJSON(): string {
+  const slim: SimpraWorldDoc = {
+    ...doc,
+    assets: doc.assets.map(slimAsset),
+    components: doc.components.map((c) => ({ ...c, doc: { ...c.doc, assets: c.doc.assets.map(slimAsset) } })),
+  }
+  return JSON.stringify(slim)
+}
 
 function resetHistory() {
   past = []
   future = []
-  committedJSON = JSON.stringify(doc)
+  rememberAssets()
+  committedJSON = slimDocJSON()
   historyReady = true
 }
 
 function recordHistory() {
   if (!historyReady) return
-  const cur = JSON.stringify(doc)
+  rememberAssets()
+  const cur = slimDocJSON()
   if (cur === committedJSON) return // doc 변화 없음(선택/공간만 바뀜) → 기록 안 함
   past.push(committedJSON)
   if (past.length > HISTORY_LIMIT) past.shift()
@@ -76,9 +102,15 @@ function recordHistory() {
   committedJSON = cur
 }
 
-/** undo/redo로 받은 스냅샷을 doc에 적용 (히스토리는 다시 기록하지 않음). */
+/** undo/redo로 받은 (슬림) 스냅샷을 doc에 적용 — 이미지 데이터는 assetMem에서 복구. */
 function applyDocSnapshot(json: string) {
-  doc = JSON.parse(json) as SimpraWorldDoc
+  const parsed = JSON.parse(json) as SimpraWorldDoc
+  parsed.assets = parsed.assets.map(fatAsset)
+  parsed.components = parsed.components.map((c) => ({
+    ...c,
+    doc: { ...c.doc, assets: c.doc.assets.map(fatAsset) },
+  }))
+  doc = parsed
   committedJSON = json
   // 사라진 항목은 선택/경로에서 정리
   const livePids = new Set(doc.placements.map((p) => p.id))
@@ -431,7 +463,12 @@ export function itemsInCurrentSpace(): SpaceItem[] {
       color: n.color,
       assetId: n.assetId,
       textColor: n.textColor,
+      emphasize: n.emphasize,
       body: n.body,
+      badge: n.badge,
+      badgeSize: n.badgeSize,
+      badgeColor: n.badgeColor,
+      badgeBg: n.badgeBg,
       x: p.x,
       y: p.y,
       locked: p.locked,
@@ -640,7 +677,10 @@ export function deleteSelection() {
   for (const nid of new Set(nodeIds)) deleteNode(nid)
 }
 
-/** 선택된 항목들끼리만 연결된 참조선이 있나(다중 선택 "참조 해제" 버튼 노출 판단). */
+/** 선택된 항목들끼리 연결된 참조선들(양 끝 모두 선택). */
+export function selectionInternalEdges(): SEdge[] {
+  return doc.edges.filter((e) => selection.has(e.from) && selection.has(e.to))
+}
 export function selectionHasInternalEdges(): boolean {
   return doc.edges.some((e) => selection.has(e.from) && selection.has(e.to))
 }
@@ -650,6 +690,23 @@ export function removeEdgesAmongSelection() {
   const before = doc.edges.length
   doc.edges = doc.edges.filter((e) => !(selection.has(e.from) && selection.has(e.to)))
   if (doc.edges.length !== before) changed()
+}
+
+/** 선택 내부 참조선들의 색을 일괄 설정. */
+export function setEdgeColorAmongSelection(color: string) {
+  let hit = false
+  for (const e of doc.edges)
+    if (selection.has(e.from) && selection.has(e.to)) (e.color = color), (hit = true)
+  if (hit) changed()
+}
+
+/** 선택 내부 참조선들의 강조(굵게) 토글. 하나라도 보통이면 전부 굵게, 다 굵으면 전부 해제. */
+export function toggleEdgeBoldAmongSelection() {
+  const edges = selectionInternalEdges()
+  if (!edges.length) return
+  const target = !edges.every((e) => e.bold)
+  for (const e of edges) e.bold = target
+  changed()
 }
 
 /** 선택 항목 중 하나라도 여러 곳에 놓인(공유=유니크) 노드가 있나 → 삭제 모달에 "여기서만/전체" 분기. */
@@ -940,7 +997,7 @@ function placeDoc(incoming: SimpraWorldDoc, space: string | null, dx: number, dy
     if (isRoot) rootPids.push(np.id)
   }
   for (const e of incoming.edges) {
-    doc.edges.push({ id: uid('e'), from: remap(e.from), to: remap(e.to) })
+    doc.edges.push({ id: uid('e'), from: remap(e.from), to: remap(e.to), color: e.color, bold: e.bold })
   }
   selection = new Set(rootPids) // 붙여넣은 항목 전체 선택
   changed()
@@ -962,23 +1019,18 @@ export function addAsset(a: Asset) {
   changed()
 }
 
-/** 사진 노드 생성: 에셋 등록 + 이미지 노드 1개를 (x,y)에 생성(비율 유지). */
+/** 사진 개체 생성: 에셋 등록 + photo 노드 1개를 (x,y)에 생성(비율 유지). 라벨·노트편집 없음. */
 export function addPhoto(
-  img: { thumb: string; original?: string; mime: string; w: number; h: number },
+  img: { thumb: string; mime: string; w: number; h: number },
   x: number,
   y: number,
 ): SNode {
-  const asset: Asset = {
-    id: uid('a'),
-    kind: 'image',
-    mime: img.mime,
-    thumb: img.thumb,
-    original: img.original,
-  }
+  const asset: Asset = { id: uid('a'), kind: 'image', mime: img.mime, thumb: img.thumb }
   doc.assets.push(asset)
   const node = addNode('memo', x, y) // 생성 + 단독 선택
   const MAX = 320 // 월드 기준 최대 변(기본 사진 크기)
   const scale = Math.min(1, MAX / Math.max(img.w, img.h, 1))
+  node.type = 'photo' // 노트가 아닌 "사진" 개체
   node.assetId = asset.id
   node.shape = 'image'
   node.name = 'Photo'
@@ -1151,7 +1203,7 @@ export function importWorld(incoming: SimpraWorldDoc) {
     if (isRoot) newRootPids.push(newPid)
   }
   for (const e of incoming.edges) {
-    doc.edges.push({ id: uid('e'), from: remap(e.from), to: remap(e.to) })
+    doc.edges.push({ id: uid('e'), from: remap(e.from), to: remap(e.to), color: e.color, bold: e.bold })
   }
   spacePath = [] // 가져온 건 유니버스 루트에서 보이게
   selection = new Set(newRootPids) // 붙여넣은 것처럼 전부 선택 → 바로 이동 가능
@@ -1212,6 +1264,9 @@ export async function init() {
       if (!saved.components) saved.components = [] // 구버전엔 컴포넌트 배열 없음
       if (!saved.universeName) saved.universeName = 'My Universe' // 구버전엔 유니버스명 없음
       migrateEdgesToPlacements(saved) // 구버전: node 기반 엣지 → placement 기반
+      // 구버전: 이미지 메모(본문 없음) → 사진 개체로
+      for (const n of saved.nodes)
+        if (n.type === 'memo' && n.shape === 'image' && n.assetId && !n.body) n.type = 'photo'
       doc = saved
     } else {
       doc = makeSampleWorld()

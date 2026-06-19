@@ -46,7 +46,7 @@ export default function LibraryPanel() {
             ) : (
               <S.Caret as="span" />
             )}
-            <S.Icon>{isFolder ? '📁' : '📝'}</S.Icon>
+            <S.Icon>{isFolder ? '📁' : node.type === 'photo' ? '🖼' : '📝'}</S.Icon>
             <S.Name title={node.name}>{node.name || 'Untitled'}</S.Name>
             {p.stored ? (
               <S.Badge title="Stored only (not on canvas)">📦</S.Badge>
@@ -90,7 +90,7 @@ export default function LibraryPanel() {
                 onDoubleClick={() => r.node.type !== 'folder' && openNote(r.node.id)}
                 title={r.node.type === 'folder' ? '' : 'Double-click to open'}
               >
-                <S.Icon>{r.node.type === 'folder' ? '📁' : '📝'}</S.Icon>
+                <S.Icon>{r.node.type === 'folder' ? '📁' : r.node.type === 'photo' ? '🖼' : '📝'}</S.Icon>
                 <S.Name title={r.node.name}>{r.node.name || 'Untitled'}</S.Name>
                 <S.PathLabel title={r.path}>{r.path}</S.PathLabel>
                 <S.UseBtn

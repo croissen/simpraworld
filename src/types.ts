@@ -6,7 +6,7 @@
 //  4) 소속+좌표는 노드에서 분리해 placements(관계 테이블)로 → 한 노드가 여러 공간에
 //     동시에 존재 가능(다대다 참조). node=데이터(원본 1개), placement=어디에 어떤 좌표로 놓였나.
 
-export type NodeType = 'folder' | 'memo'
+export type NodeType = 'folder' | 'memo' | 'photo' // photo = 순수 사진 개체(라벨·노트편집 없음)
 export type Shape = 'rect' | 'circle' | 'triangle' | 'hexagon' | 'image'
 
 /**
@@ -43,8 +43,13 @@ export interface SNode {
   color: string
   assetId?: string // 이미지 아이콘
   textColor?: string // 이름(라벨) 글자색. 없으면 기본 밝은색
+  emphasize?: boolean // 이름 라벨 강조(대비 테두리) → 어떤 배경에서도 잘 보이게
   body?: string // 메모 본문(노트 더블클릭 팝업에서 편집)
   tags?: string[] // 해시태그(연관 메모 묶기·검색·교체용). '#' 없이 저장.
+  badge?: string // 좌상단 배지(유통기한·능력치·직급 등 짧은 라벨). 비면 캔버스에 안 보임.
+  badgeSize?: number // 배지 폰트 크기(월드 단위, 기본 14). 노드 크기와 무관 → 가림 비율 고정.
+  badgeColor?: string // 배지 글자색(기본 진한색)
+  badgeBg?: string // 배지 배경색. 'none'=배경 없음, 미지정=기본 앰버
   updatedAt: number
 }
 
@@ -69,7 +74,12 @@ export interface SpaceItem {
   color: string
   assetId?: string
   textColor?: string
+  emphasize?: boolean
   body?: string
+  badge?: string
+  badgeSize?: number
+  badgeColor?: string
+  badgeBg?: string
   w: number
   h: number
   radius?: number
@@ -82,6 +92,8 @@ export interface SEdge {
   id: string
   from: string // placement id (배치 단위 — 같은 노드라도 배치마다 참조선이 따로)
   to: string // placement id
+  color?: string // 참조선 색(없으면 기본 회색)
+  bold?: boolean // 강조: 더 굵게
 }
 
 export interface SimpraWorldDoc {

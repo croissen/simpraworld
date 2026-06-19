@@ -151,6 +151,17 @@ export const NumRow = styled.div`
   gap: 6px;
 `
 
+/* 이름 입력 + 강조 토글 한 줄 */
+export const NameRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  > input {
+    flex: 1;
+    min-width: 0;
+  }
+`
+
 /* 피그마 Dimensions 처럼: 박스 안에 W/H(또는 X/Y) 라벨 + 숫자 입력 */
 export const DimBox = styled.label`
   flex: 1;
@@ -189,6 +200,18 @@ export const Lock = styled.button<{ $on?: boolean }>`
   padding: 6px 0;
   cursor: pointer;
   font-size: 14px;
+`
+
+/* 링크(참조선) 색 고르기 버튼 */
+export const ColorBtn = styled.input`
+  flex: none;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid #2b3346;
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
 `
 
 export const Chip = styled.button<{ $on?: boolean }>`

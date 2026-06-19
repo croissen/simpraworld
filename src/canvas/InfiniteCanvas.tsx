@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { SpaceItem } from '../types'
+import type { SEdge, SpaceItem } from '../types'
 import * as S from './InfiniteCanvas.styles'
 import {
   bumpUI,
@@ -9,6 +9,7 @@ import {
   edgesInCurrentSpace,
   enterFolder,
   getAsset,
+  DEFAULT_BADGE_SIZE,
   getAspectLocked,
   getCamera,
   getDoc,
@@ -33,6 +34,14 @@ import {
 
 // 노드 둘레 링 표시: null=없음, yellow=일반 선택, purple=유니크(공유) 선택, sibling=결속 형제(점선)
 type Ring = 'yellow' | 'purple' | 'sibling' | null
+
+// 색이 밝은지(테두리 대비색 결정용)
+function isLightColor(hex: string): boolean {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim())
+  if (!m) return true
+  const v = parseInt(m[1], 16)
+  return 0.299 * ((v >> 16) & 255) + 0.587 * ((v >> 8) & 255) + 0.114 * (v & 255) > 150
+}
 
 const MIN_ZOOM = 0.05
 const MAX_ZOOM = 8
@@ -115,7 +124,7 @@ export default function InfiniteCanvas() {
       // 선은 따라오지 않음. 끝점보다 아래의 것들(맨뒤 사진 등)은 선에 가려지지 않음.
       const itemByPid = new Map(items.map((it) => [it.pid, it]))
       const zOf = new Map(items.map((it, i) => [it.pid, i]))
-      const edgesByAnchor = new Map<number, { from: string; to: string }[]>()
+      const edgesByAnchor = new Map<number, SEdge[]>()
       for (const e of edgesInCurrentSpace()) {
         const za = zOf.get(e.from)
         const zb = zOf.get(e.to)
@@ -125,13 +134,13 @@ export default function InfiniteCanvas() {
         if (arr) arr.push(e)
         else edgesByAnchor.set(anchor, [e])
       }
-      function strokeEdges(eds: { from: string; to: string }[]) {
-        ctx.strokeStyle = 'rgba(150,170,210,0.35)'
-        ctx.lineWidth = Math.max(1, 1.5 * c.zoom)
+      function strokeEdges(eds: SEdge[]) {
         for (const e of eds) {
           const a = itemByPid.get(e.from)
           const b = itemByPid.get(e.to)
           if (!a || !b) continue
+          ctx.strokeStyle = e.color || 'rgba(150,170,210,0.35)'
+          ctx.lineWidth = Math.max(1, (e.bold ? 2.6 : 1.5) * c.zoom)
           const pa = w2s(a.x, a.y)
           const pb = w2s(b.x, b.y)
           ctx.beginPath()
@@ -296,8 +305,9 @@ export default function InfiniteCanvas() {
       ring: Ring,
     ) {
       const rad = Math.min(hw, hh) // 둥근 정도/점 크기 기준
-      // LOD: 20% 미만일 때만 점으로
+      // LOD: 20% 미만이면 점으로 — 단, 사진은 아예 안 보이게(폴더·노트만 점)
       if (zoom < 0.2) {
+        if (n.type === 'photo') return
         ctx.fillStyle = n.color
         ctx.beginPath()
         ctx.arc(x, y, Math.max(2, rad), 0, Math.PI * 2)
@@ -351,13 +361,67 @@ export default function InfiniteCanvas() {
         ctx.setLineDash([])
       }
 
-      // 이름 (줌 충분할 때만)
-      if (zoom >= 0.3) {
-        ctx.fillStyle = n.textColor || '#e8ecf3'
-        ctx.font = `${Math.max(11, Math.min(16, rad * 0.5))}px system-ui, sans-serif`
+      // 좌상단 배지. 크기는 노드 크기와 무관(월드 고정 × 줌)이라 가림 비율이 일정. 줄바꿈 지원.
+      if (n.badge && n.badge.trim()) {
+        const fs = (n.badgeSize || DEFAULT_BADGE_SIZE) * zoom
+        if (fs >= 5) {
+          const lines = n.badge.split('\n').map((l) => (l.length > 24 ? l.slice(0, 23) + '…' : l))
+          const noBg = n.badgeBg === 'none'
+          ctx.save()
+          ctx.font = `600 ${fs}px system-ui, sans-serif`
+          const padX = fs * 0.42
+          const padY = fs * 0.28
+          const lineH = fs * 1.18
+          let maxW = 0
+          for (const l of lines) maxW = Math.max(maxW, ctx.measureText(l).width)
+          const bw = maxW + padX * 2
+          const bh = (lines.length - 1) * lineH + fs + padY * 2
+          const bx = x - hw + 2
+          const by = y - hh + 2
+          if (!noBg) {
+            ctx.fillStyle = n.badgeBg || '#e3b341'
+            roundRectPath(bx, by, bw, bh, fs * 0.35)
+            ctx.fill()
+          }
+          const txtColor = n.badgeColor || (noBg ? '#fff' : '#1a1300')
+          ctx.textAlign = 'left'
+          ctx.textBaseline = 'top'
+          if (noBg || n.emphasize) {
+            ctx.shadowColor = isLightColor(txtColor) ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.9)'
+            ctx.shadowBlur = Math.max(2, fs * 0.25)
+          }
+          ctx.fillStyle = txtColor
+          let ly = by + padY
+          for (const l of lines) {
+            ctx.fillText(l, bx + padX, ly)
+            if (n.emphasize) ctx.fillText(l, bx + padX, ly) // 한 번 더 → 그림자 또렷
+            ly += lineH
+          }
+          ctx.restore()
+        }
+      }
+
+      // 이름 (줌 충분할 때만). 사진 개체는 라벨 없이 순수 이미지만.
+      if (zoom >= 0.3 && n.type !== 'photo') {
+        const fontPx = Math.max(11, Math.min(16, rad * 0.5))
+        const tx = x
+        const ty = y + hh + 4
+        ctx.font = `${fontPx}px system-ui, sans-serif`
         ctx.textAlign = 'center'
         ctx.textBaseline = 'top'
-        ctx.fillText(n.name, x, y + hh + 4)
+        // 강조: 부드러운 그림자로 살짝 들어올림(테두리로 덮지 않음) → 흰 배경서도 보임
+        ctx.fillStyle = n.textColor || '#e8ecf3'
+        if (n.emphasize) {
+          ctx.save()
+          ctx.shadowColor = isLightColor(n.textColor || '#e8ecf3') ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.9)'
+          ctx.shadowBlur = Math.max(2, fontPx * 0.3)
+          ctx.shadowOffsetY = Math.max(0.5, fontPx * 0.05)
+          ctx.fillText(n.name, tx, ty)
+          ctx.fillText(n.name, tx, ty) // 한 번 더 → 그림자 또렷
+          ctx.restore()
+        } else {
+          ctx.fillText(n.name, tx, ty)
+        }
       }
     }
 
@@ -709,11 +773,11 @@ export default function InfiniteCanvas() {
 
       if (mode === 'drag' && dragItem) {
         if (!moved) {
-          // 탭 = 선택, 더블탭(폴더=진입/메모=노트팝업)
+          // 탭 = 선택, 더블탭(폴더=진입/메모=노트팝업). 사진은 더블클릭해도 편집창 안 뜸.
           const now = Date.now()
           if (!e.shiftKey && lastTapId === dragItem.pid && now - lastTapTime < 350) {
             if (dragItem.type === 'folder') enterFolder(dragItem.nodeId)
-            else openNote(dragItem.nodeId, dragItem.pid)
+            else if (dragItem.type === 'memo') openNote(dragItem.nodeId, dragItem.pid)
           } else {
             select(dragItem.pid, e.shiftKey) // Shift = 토글(다중), 아니면 단독
           }

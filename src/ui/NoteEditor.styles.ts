@@ -48,6 +48,7 @@ export const Left = styled.div`
 `
 
 export const Thumb = styled.div`
+  position: relative;
   width: 100%;
   aspect-ratio: 1 / 1;
   border-radius: 10px;
@@ -64,10 +65,140 @@ export const Thumb = styled.div`
     height: 100%;
     object-fit: cover;
   }
-  span {
+  > .ph {
     color: #a39e8f;
     font-size: 12px;
   }
+`
+
+/* 좌상단 배지 영역 (사진 위 오버레이) */
+export const Badge = styled.button`
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  max-width: 85%;
+  background: #e3b341;
+  color: #1a1300;
+  border: none;
+  border-radius: 7px;
+  padding: 3px 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  white-space: pre-wrap; /* 줄바꿈 표시 */
+  word-break: break-word;
+  line-height: 1.25;
+  box-shadow: 0 1px 4px #0006;
+`
+
+export const BadgeDot = styled.button`
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid #0003;
+  cursor: pointer;
+  padding: 0;
+  box-shadow: 0 1px 4px #0006;
+  opacity: 0.85;
+  &:hover {
+    opacity: 1;
+  }
+`
+
+/* 배지 편집 팝업 (사진 위 오버레이) */
+export const BadgePop = styled.div`
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  right: 6px;
+  z-index: 6;
+  background: #20242e;
+  border: 1px solid #39435a;
+  border-radius: 10px;
+  padding: 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  box-shadow: 0 10px 30px #0009;
+`
+export const PopRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+`
+export const PopLabel = styled.span`
+  font-size: 11px;
+  color: #9aa3b4;
+  width: 38px;
+  flex: none;
+`
+export const PopInput = styled.input`
+  flex: 1;
+  min-width: 0;
+  background: #0f1320;
+  border: 1px solid #2b3346;
+  color: #e8ecf3;
+  border-radius: 6px;
+  padding: 5px 7px;
+  font-size: 12px;
+  outline: none;
+  &:focus {
+    border-color: #5b8cff;
+  }
+`
+export const PopArea = styled.textarea`
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 0; /* 1줄부터 시작, 줄바꿈마다 자동 증가 */
+  resize: none; /* 수동 리사이즈 막고 내용따라 자동 높이 */
+  overflow: hidden;
+  background: #0f1320;
+  border: 1px solid #2b3346;
+  color: #e8ecf3;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 1.35;
+  font-family: inherit;
+  outline: none;
+  &:focus {
+    border-color: #5b8cff;
+  }
+`
+export const SizeBtn = styled.button<{ $on?: boolean }>`
+  flex: 1;
+  background: ${(p) => (p.$on ? '#1a2440' : '#0f1320')};
+  border: 1px solid ${(p) => (p.$on ? '#5b8cff' : '#2b3346')};
+  color: #cdd6ea;
+  border-radius: 6px;
+  padding: 4px 0;
+  font-size: 11px;
+  cursor: pointer;
+`
+export const PopColor = styled.input`
+  width: 30px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid #2b3346;
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+  flex: none;
+`
+export const PopBtn = styled.button<{ $on?: boolean }>`
+  background: ${(p) => (p.$on ? '#1a2440' : '#0f1320')};
+  border: 1px solid ${(p) => (p.$on ? '#5b8cff' : '#2b3346')};
+  color: #cdd6ea;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
 `
 
 export const SwapBtn = styled.button`

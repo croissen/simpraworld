@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import ColorPicker from './ColorPicker'
 import {
   addAsset,
   enterFolder,
@@ -20,7 +20,7 @@ import {
 } from '../store'
 import { uid } from '../types'
 import type { Shape } from '../types'
-import { fileToImage, pickImageFile } from '../image'
+import { ICON_MAX, ICON_Q, fileToImage, pickImageFile } from '../image'
 import CommitInput from './CommitInput'
 import MultiInspector from './MultiInspector'
 import * as S from './Inspector.styles'
@@ -34,42 +34,6 @@ const SHAPES: { v: Shape; label: string }[] = [
 ]
 // 7색 프리셋(마지막=흰색). 그 아래 직접 고르는 팔레트(ColorPicker) 제공.
 const COLORS = ['#5b8cff', '#34c98a', '#ff8c5b', '#a78bfa', '#f472b6', '#e3b341', '#e5e7eb']
-
-// '#RGB'/'#RRGGBB'(# 생략 허용) → '#RRGGBB' 대문자. 잘못된 값이면 null.
-function normalizeHex(s: string): string | null {
-  let v = s.trim().replace(/^#/, '')
-  if (/^[0-9a-fA-F]{3}$/.test(v)) v = v.split('').map((c) => c + c).join('')
-  return /^[0-9a-fA-F]{6}$/.test(v) ? '#' + v.toUpperCase() : null
-}
-
-// 직접 색 고르기: 스와치(네이티브 OS 팔레트) + HEX 입력. HEX 고치고 Enter/포커스아웃 → 그 색으로.
-function ColorPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const [hex, setHex] = useState(value.toUpperCase())
-  useEffect(() => setHex(value.toUpperCase()), [value])
-  const commit = () => {
-    const v = normalizeHex(hex)
-    if (v) onChange(v)
-    else setHex(value.toUpperCase()) // 잘못된 값 → 원복
-  }
-  return (
-    <S.ColorRow>
-      <input type="color" value={value} onChange={(e) => onChange(e.target.value)} />
-      <input
-        type="text"
-        value={hex}
-        spellCheck={false}
-        onChange={(e) => setHex(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault()
-            e.currentTarget.blur() // Enter → blur → commit
-          }
-        }}
-        onBlur={commit}
-      />
-    </S.ColorRow>
-  )
-}
 
 export default function Inspector({
   onRequestDelete,
@@ -107,8 +71,9 @@ export default function Inspector({
   async function onPickImage() {
     const file = await pickImageFile()
     if (!file || !n) return
-    const { thumb, original, mime, w, h } = await fileToImage(file)
-    const asset = { id: uid('a'), kind: 'image' as const, mime, thumb, original, name: file.name }
+    // 노트/폴더의 이미지는 "아이콘"이라 작은 썸네일로 (용량 절약)
+    const { thumb, mime, w, h } = await fileToImage(file, ICON_MAX, ICON_Q)
+    const asset = { id: uid('a'), kind: 'image' as const, mime, thumb, name: file.name }
     addAsset(asset)
     // 기존 노드 크기(긴 변)는 유지하되 사진 비율에 맞춰 다른 변 조정 → 안 찌부됨
     const long = Math.max(n.w, n.h)
@@ -146,7 +111,16 @@ export default function Inspector({
             + Component
           </S.AddComp>
         </S.LabelRow>
-        <CommitInput value={n.name} onCommit={(v) => updateNode(n.id, { name: v })} />
+        <S.NameRow>
+          <CommitInput value={n.name} onCommit={(v) => updateNode(n.id, { name: v })} />
+          <S.Lock
+            $on={!!n.emphasize}
+            onClick={() => updateNode(n.id, { emphasize: !n.emphasize })}
+            title="Emphasize label — soft shadow lift (readable on any background)"
+          >
+            💡
+          </S.Lock>
+        </S.NameRow>
       </S.Field>
 
       <S.Field>

@@ -72,7 +72,7 @@ export async function saveSmk(suggestedName: string, makeBlob: () => Promise<Blo
     try {
       handle = await w.showSaveFilePicker({
         suggestedName,
-        types: [{ description: 'SimpraWorld 파일', accept: { 'application/octet-stream': ['.smk'] } }],
+        types: [{ description: 'SimpraWorld file', accept: { 'application/octet-stream': ['.spu'] } }],
       })
     } catch (e) {
       if ((e as { name?: string }).name === 'AbortError') return '' // 사용자가 취소
@@ -105,7 +105,7 @@ export function pickSmkFile(): Promise<File | null> {
   return new Promise((resolve) => {
     const input = document.createElement('input')
     input.type = 'file'
-    input.accept = '.smk,application/zip'
+    input.accept = '.spu,.smk,application/zip' // 기존 .smk 백업도 열 수 있게
     input.onchange = () => resolve(input.files?.[0] ?? null)
     input.click()
   })

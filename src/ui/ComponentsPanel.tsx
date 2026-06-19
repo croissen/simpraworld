@@ -40,7 +40,7 @@ export default function ComponentsPanel({
         for (const c of cdoc.components) addComponentDoc(c.name, c.doc)
       } else {
         // 단일 _comp.smk (노드 미니문서) → 1개로 추가
-        const name = rootNode(cdoc)?.name || file.name.replace(/(_comp)?\.smk$/i, '')
+        const name = rootNode(cdoc)?.name || file.name.replace(/(_comp)?\.(spu|smk)$/i, '')
         addComponentDoc(name, cdoc)
       }
     } catch (e) {
@@ -50,11 +50,11 @@ export default function ComponentsPanel({
 
   async function onExportAll() {
     if (comps.length === 0) return alert('No components to export')
-    await saveSmk('components.smk', () => exportSmk(exportAllComponentsDoc()))
+    await saveSmk('components.spu', () => exportSmk(exportAllComponentsDoc()))
   }
 
   async function onDownload(c: ComponentDef) {
-    await saveSmk(`${c.name.trim()}_comp.smk`, () => exportSmk(c.doc))
+    await saveSmk(`${c.name.trim()}_comp.spu`, () => exportSmk(c.doc))
   }
 
   function meta(c: ComponentDef) {
@@ -72,10 +72,10 @@ export default function ComponentsPanel({
         <S.Header>
           <span>Components</span>
           <S.HeaderBtns>
-            <S.HeaderBtn onClick={onImport} title="Import _comp.smk (single or bundle) into the list">
+            <S.HeaderBtn onClick={onImport} title="Import _comp.spu (single or bundle) into the list">
               ⤒ Import
             </S.HeaderBtn>
-            <S.HeaderBtn onClick={onExportAll} title="Export all components as components.smk">
+            <S.HeaderBtn onClick={onExportAll} title="Export all components as components.spu">
               ⤓ Export all
             </S.HeaderBtn>
           </S.HeaderBtns>
@@ -120,7 +120,7 @@ export default function ComponentsPanel({
                 <S.IconBtn onClick={(e) => (e.stopPropagation(), setEditingId(c.id))} title="Rename">
                   ✎
                 </S.IconBtn>
-                <S.IconBtn onClick={(e) => (e.stopPropagation(), onDownload(c))} title="Download _comp.smk">
+                <S.IconBtn onClick={(e) => (e.stopPropagation(), onDownload(c))} title="Download _comp.spu">
                   ⤓
                 </S.IconBtn>
                 <S.IconBtn

@@ -44,13 +44,13 @@ export default function Toolbar() {
       const space = getCurrentSpace()
       const name = space ? getNode(space)?.name ?? 'Space' : getUniverseName()
       out = exportSpaceDoc(space)
-      filename = `${name.trim()}.smk`
+      filename = `${name.trim()}.spu`
     } else if (n && n.type === 'folder') {
       out = exportFolderDoc(n.id)
-      filename = `${n.name.trim()}.smk`
+      filename = `${n.name.trim()}.spu`
     } else {
       out = selectionToDoc()
-      filename = n ? `${n.name.trim()}.smk` : `selection-${selectionCount()}.smk`
+      filename = n ? `${n.name.trim()}.spu` : `selection-${selectionCount()}.spu`
     }
     const where = await saveSmk(filename, () => exportSmk(out))
     if (where) alert('Saved: ' + where)
@@ -100,14 +100,14 @@ export default function Toolbar() {
             title={
               count === 0
                 ? 'Export everything in the current space'
-                : 'Export the selected item(s) as a .smk file'
+                : 'Export the selected item(s) as a .spu file'
             }
           >
             {count === 0 ? '⤓ Export all' : count > 1 ? `⤓ Export (${count})` : '⤓ Export'}
           </S.Button>
         )
       })()}
-      <S.Button onClick={onImport} title="Import a .smk into My Universe">⤒ Import</S.Button>
+      <S.Button onClick={onImport} title="Import a .spu into My Universe">⤒ Import</S.Button>
       <S.Gap />
       <S.Button
         $danger
