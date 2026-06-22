@@ -80,6 +80,8 @@ export default function InfiniteCanvas() {
     let spaceHeld = false // Space = 패닝 모드
     let marquee: { x0: number; y0: number; x1: number; y1: number } | null = null // 영역 선택/줄잇기 박스
     let dragGroup: { pid: string; x0: number; y0: number }[] | null = null // 일괄 이동용 시작좌표
+    let snapX: number | null = null // 정렬 스냅 가이드(월드 X) — 다른 개체와 같은 세로선
+    let snapY: number | null = null // 정렬 스냅 가이드(월드 Y) — 다른 개체와 같은 가로선
     let dragMovable = false // 이미 선택돼 있던 개체만 이번 드래그로 이동 가능(첫 클릭은 선택만)
     let lpTimer: ReturnType<typeof setTimeout> | null = null // 모바일 롱프레스(꾹) → 다중선택
     let longPressed = false
@@ -295,6 +297,24 @@ export default function InfiniteCanvas() {
           }
           ctx.setLineDash([])
         }
+      }
+
+      // 정렬 스냅 가이드(드래그 중 같은 X/Y에 붙었을 때) — 화면 가로/세로 전체에 초록선
+      if (snapX !== null || snapY !== null) {
+        ctx.strokeStyle = '#3ddc7f'
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        if (snapX !== null) {
+          const sx = w2s(snapX, 0).x
+          ctx.moveTo(sx, 0)
+          ctx.lineTo(sx, H)
+        }
+        if (snapY !== null) {
+          const sy = w2s(0, snapY).y
+          ctx.moveTo(0, sy)
+          ctx.lineTo(W, sy)
+        }
+        ctx.stroke()
       }
 
       // 줌 표시
@@ -795,8 +815,36 @@ export default function InfiniteCanvas() {
             .filter((g): g is { pid: string; x0: number; y0: number } => !!g)
         }
         const c = getCamera()
-        const dwx = (p.x - downAt.x) / c.zoom
-        const dwy = (p.y - downAt.y) / c.zoom
+        let dwx = (p.x - downAt.x) / c.zoom
+        let dwy = (p.y - downAt.y) / c.zoom
+        // 정렬 스냅: 주 개체 중심이 다른 개체 중심 X/Y에 가까우면(6px 이내) 그 선에 붙임(자석).
+        // 더 끌면(6px 초과) 자연히 풀려서 계속 이동.
+        snapX = null
+        snapY = null
+        const prim = dragGroup.find((g) => g.pid === dragItem!.pid) ?? dragGroup[0]
+        if (prim) {
+          const groupPids = new Set(dragGroup.map((g) => g.pid))
+          const curX = prim.x0 + dwx
+          const curY = prim.y0 + dwy
+          const tol = 6 / c.zoom
+          let bestXd = tol
+          let bestYd = tol
+          for (const it of itemsInCurrentSpace()) {
+            if (groupPids.has(it.pid)) continue
+            const dxa = Math.abs(it.x - curX)
+            if (dxa < bestXd) {
+              bestXd = dxa
+              snapX = it.x
+            }
+            const dya = Math.abs(it.y - curY)
+            if (dya < bestYd) {
+              bestYd = dya
+              snapY = it.y
+            }
+          }
+          if (snapX !== null) dwx += snapX - curX
+          if (snapY !== null) dwy += snapY - curY
+        }
         for (const g of dragGroup) moveNodeLive(g.pid, g.x0 + dwx, g.y0 + dwy)
         // 드롭 준비는 단일 드래그일 때만 (그룹 드롭은 복잡 → 제외). 폴더(넣기) 우선, 없으면 노트(맞바꾸기)
         if (dragGroup.length === 1) {
@@ -905,6 +953,8 @@ export default function InfiniteCanvas() {
       armedSwapPid = null
       dragGroup = null
       dragMovable = false
+      snapX = null // 정렬 가이드 해제
+      snapY = null
       clearLP()
       marquee = null
       linkSourcePids = []
