@@ -9,10 +9,12 @@ import {
   toggleLibrary,
   useFromLibrary,
 } from '../store'
+import { useIsMobile } from '../useIsMobile'
 import * as S from './LibraryPanel.styles'
 
 // Library: whole-universe folder/note tree (exposed + stored). Opens with current space expanded. Search + "Use".
 export default function LibraryPanel() {
+  const isMobile = useIsMobile()
   const [query, setQuery] = useState('')
   // expand the folders along the current space path by default
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(breadcrumb().map((n) => n.id)))
@@ -37,8 +39,9 @@ export default function LibraryPanel() {
             $depth={depth}
             $stored={!!p.stored}
             $current={isFolder && p.nodeId === currentSpace}
+            onClick={() => isMobile && isFolder && toggle(p.nodeId)} // 모바일: 한 번 터치로 폴더 열고닫기
             onDoubleClick={() => (isFolder ? toggle(p.nodeId) : openNote(node.id))}
-            title={isFolder ? 'Double-click to expand/collapse' : 'Double-click to open'}
+            title={isFolder ? 'Tap to expand/collapse' : 'Double-click to open'}
           >
             {isFolder ? (
               <S.Caret onClick={(e) => (e.stopPropagation(), toggle(p.nodeId))}>

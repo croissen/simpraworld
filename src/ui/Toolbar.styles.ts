@@ -5,22 +5,25 @@ export const Toolbar = styled.div`
   gap: 6px;
   align-items: center;
 
-  /* 모바일: 한 줄 가득 차지하고 가로 스크롤(버튼이 줄바꿈으로 깨지지 않게) */
+  /* 모바일: 우측 하단에 동그란 FAB 3개(+, 📄, ⋯)로 고정 */
   @media (max-width: 640px) {
-    flex: 1 1 100%;
-    min-width: 0;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    padding-bottom: 2px;
-    scrollbar-width: none;
-    &::-webkit-scrollbar {
-      display: none;
-    }
-    /* 메뉴 spans: UndoGroup(1·숨김)·+(2)·📄(3)·⋯(4). 첫 메뉴(+, 2번)만 margin-left:auto로
-       그룹 전체를 우측으로 밀고, 뒤 메뉴(3·4)는 0으로 붙여 가운데 빈틈 제거 */
-    & > span:nth-of-type(n + 3) {
-      margin-left: 0;
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 30;
+    flex-direction: column-reverse;
+    align-items: flex-end;
+    gap: 12px;
+    & > button {
+      width: 56px;
+      height: 56px;
+      padding: 0;
+      border-radius: 50%;
+      font-size: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 6px 18px #0007;
     }
   }
 `
@@ -82,6 +85,42 @@ export const TrayItem = styled.span<{ $open: boolean; $i: number; $n: number; $a
     p.$open ? (p.$align === 'right' ? p.$n - 1 - p.$i : p.$i) * 0.08 : 0}s;
 `
 
+/* 모바일: 메뉴 클릭 시 뜨는 팝업(바텀시트) 리스트 */
+export const MobilePopOverlay = styled.div`
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+`
+
+export const MobileSheet = styled.div`
+  width: 100%;
+  max-width: 480px;
+  margin: 0 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  background: #161b27f5;
+  border: 1px solid #2b3346;
+  border-radius: 16px;
+  box-shadow: 0 -12px 40px #0009;
+  backdrop-filter: blur(8px);
+
+  /* 안의 버튼들은 큼직하게 한 줄씩 */
+  & button {
+    width: 100%;
+    justify-content: flex-start;
+    text-align: left;
+    font-size: 16px;
+    padding: 14px 16px;
+    border-radius: 10px;
+  }
+`
+
 /* 저장 성공 시 "..." 버튼이 초록 체크로 팡 떴다가 사라짐 */
 export const savedPop = keyframes`
   0%   { transform: scale(0.6); }
@@ -109,8 +148,8 @@ export const Button = styled.button<{ $on?: boolean; $danger?: boolean; $saved?:
     `}
 
   @media (max-width: 640px) {
-    padding: 7px 9px;
-    font-size: 12px;
+    padding: 11px 15px;
+    font-size: 15px;
   }
 
   &:hover {

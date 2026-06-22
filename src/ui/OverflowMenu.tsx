@@ -1,6 +1,7 @@
-// 펼침(오버플로) 메뉴: 토글 버튼을 누르면 그 옆으로 버튼들이 좌르륵 펼쳐짐.
-// 다시 누르기 전까지 안 닫힘(바깥 클릭으로 자동으로 닫지 않음).
+// 펼침 메뉴: 데스크톱은 토글 버튼 옆으로 좌르륵, 모바일은 팝업(바텀시트) 리스트로.
 import { useState, type ReactElement, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { useIsMobile } from '../useIsMobile'
 import * as S from './Toolbar.styles'
 
 export default function OverflowMenu({
@@ -18,13 +19,38 @@ export default function OverflowMenu({
   align?: 'left' | 'right'
   saved?: boolean // 토글 버튼 초록 체크 강조(저장 직후 "..." 메뉴용)
 }) {
-  const [open, setOpen] = useState(defaultOpen)
+  const isMobile = useIsMobile()
+  const [open, setOpen] = useState(isMobile ? false : defaultOpen)
 
   const toggle = (
     <S.Button $on={open} $saved={saved} onClick={() => setOpen((v) => !v)} title={title}>
       {label}
     </S.Button>
   )
+
+  // 모바일: 버튼 클릭 → 팝업 리스트(항목 누르면 실행 + 닫힘)
+  if (isMobile) {
+    return (
+      <>
+        {toggle}
+        {open &&
+          createPortal(
+            <S.MobilePopOverlay onClick={() => setOpen(false)}>
+              <S.MobileSheet onClick={(e) => e.stopPropagation()}>
+                {items.map((el, i) => (
+                  <div key={el.key ?? i} onClick={() => setOpen(false)}>
+                    {el}
+                  </div>
+                ))}
+              </S.MobileSheet>
+            </S.MobilePopOverlay>,
+            document.body,
+          )}
+      </>
+    )
+  }
+
+  // 데스크톱: 인라인 트레이
   const tray = (
     <S.Tray $open={open} $align={align} aria-hidden={!open}>
       {items.map((el, i) => (
@@ -42,7 +68,6 @@ export default function OverflowMenu({
     </S.Tray>
   )
 
-  // align='right'면 트레이가 버튼 왼쪽에서 펼쳐지도록 순서를 뒤집는다
   return (
     <S.Overflow $align={align}>
       {align === 'right' ? (

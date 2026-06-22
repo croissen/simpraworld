@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   bumpUI,
+  defaultZoom,
   getBgColor,
   getCamera,
   getGridBold,
@@ -44,7 +45,7 @@ export default function ViewPanel() {
     setOpen(false)
   }
   const reset = () => {
-    setCamera({ x: 0, y: 0, zoom: 1 })
+    setCamera({ x: 0, y: 0, zoom: defaultZoom() }) // 모바일=75%, PC=100%
     bumpUI()
     setXv('0')
     setYv('0')

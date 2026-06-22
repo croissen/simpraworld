@@ -164,7 +164,7 @@ export default function Toolbar() {
       />
       {/* 📄 메뉴: 보기 패널 (기본 닫힘) */}
       <OverflowMenu
-        label="📄"
+        label="📁"
         title="Panels — Components, Library"
         align="right"
         items={[

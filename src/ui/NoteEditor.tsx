@@ -14,6 +14,7 @@ import {
 } from '../store'
 import { uid } from '../types'
 import type { SNode } from '../types'
+import { toBlob } from 'html-to-image'
 import { fileToImage, pickImageFile } from '../image'
 import { useIsMobile } from '../useIsMobile'
 import ConfirmModal from './ConfirmModal'
@@ -133,7 +134,11 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 }) // 메뉴를 띄울 위치(사진박스 중앙)
   const [confirmDel, setConfirmDel] = useState(false)
   const [viewPhoto, setViewPhoto] = useState(false) // 모바일 사진 크게보기
+  const [shareOpen, setShareOpen] = useState(false) // 공유 팝업
+  const [capturing, setCapturing] = useState(false) // 캡처 중(버튼 숨김)
   const thumbRef = useRef<HTMLDivElement>(null)
+  const paperRef = useRef<HTMLDivElement>(null) // 실제 메모창(캡처 대상)
+  const shareBlobRef = useRef<Blob | null>(null) // 팝업 열릴 때 미리 캡처한 이미지
 
   // 다른 노트로 새로 열리면 미리보기/검색 초기화
   useEffect(() => {
@@ -174,6 +179,113 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
     if (!slotPid) return
     swapInNote(slotPid, viewedId)
     setQuery('')
+  }
+  // 노트 공유 팝업 열기
+  const doShare = () => setShareOpen(true)
+
+  // 실제 메모창을 버튼만 숨겨(capturing) 그대로 PNG로 캡처
+  const captureBlob = async () => {
+    setCapturing(true)
+    // 두 프레임 대기 → 버튼 숨김 반영 후 캡처
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    try {
+      await (document as Document & { fonts?: { ready: Promise<unknown> } }).fonts?.ready
+    } catch {
+      /* 폰트 대기 실패 무시 */
+    }
+    let blob: Blob | null = null
+    try {
+      // cacheBust 금지: 사진 dataURL에 ?가 붙어 깨짐
+      if (paperRef.current)
+        blob = await toBlob(paperRef.current, { pixelRatio: 2, backgroundColor: '#f3f1ea' })
+    } catch (e) {
+      console.warn('capture failed', e)
+    } finally {
+      setCapturing(false)
+    }
+    return blob
+  }
+
+  // 이미지 다운로드(폴백 공통)
+  const downloadImage = (blob: Blob) => {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${(n.name || 'note').trim()}.png`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 2000)
+  }
+
+  // 텍스트 복사(HTTPS=Clipboard API, HTTP=레거시 execCommand 폴백)
+  const copyText = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
+      /* fall through */
+    }
+    try {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.left = '-9999px'
+      document.body.appendChild(ta)
+      ta.select()
+      const ok = document.execCommand('copy')
+      ta.remove()
+      return ok
+    } catch {
+      return false
+    }
+  }
+
+  // 팝업 열릴 때 미리 캡처(공유 시트는 사용자 제스처 내 호출 필요 → 미리 준비)
+  useEffect(() => {
+    if (!shareOpen) return
+    shareBlobRef.current = null
+    captureBlob().then((b) => (shareBlobRef.current = b))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shareOpen])
+
+  // 갤러리: 메모 화면을 이미지로 저장(다운로드)
+  const shareGallery = async () => {
+    setShareOpen(false)
+    const blob = shareBlobRef.current ?? (await captureBlob())
+    if (!blob) return
+    downloadImage(blob)
+  }
+
+  // 이미지를 클립보드에 복사(붙여넣기용). 공유 시트 안 띄움.
+  const shareClipboard = async () => {
+    const blob = shareBlobRef.current // 제스처 보존 위해 미리 캡처해둔 것 사용
+    setShareOpen(false)
+    if (!blob) return
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+      alert('Image copied to clipboard')
+    } catch {
+      alert('Could not copy image — clipboard image copy needs HTTPS')
+    }
+  }
+
+  // 텍스트: 제목 / 내용 / 해시태그 형식으로 복사
+  const shareText = async () => {
+    setShareOpen(false)
+    const tagLine = (n.tags || []).map((t) => '#' + t).join(' ')
+    const text = [n.name?.trim(), n.body?.trim(), tagLine].filter(Boolean).join('\n\n')
+    alert((await copyText(text)) ? 'Text copied' : 'Copy failed')
+  }
+
+  // 모바일 읽기전용 영역 더블탭 → 그 자리에서 바로 수정+키패드(제스처 안에서 readOnly 해제+focus)
+  const enterEdit = (e: React.MouseEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    if (!isMobile || !editLocked) return
+    const el = e.currentTarget
+    el.readOnly = false
+    el.blur() // 이미 포커스된 상태(특히 textarea)면 focus가 무시되므로 강제 재포커스 → 키패드 즉시
+    el.focus()
+    setEditLocked(false)
   }
 
   // 자리에 실제로 꽂힌 노트 (교체 가능 여부 판단용)
@@ -256,6 +368,15 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
           <img src={asset.thumb} alt={n.name} />
         </S.FullView>
       )}
+      {shareOpen && (
+        <S.SharePop onClick={() => setShareOpen(false)}>
+          <S.ShareSheet onClick={(e) => e.stopPropagation()}>
+            <S.ShareItem onClick={shareGallery}>🖼 Save image</S.ShareItem>
+            <S.ShareItem onClick={shareClipboard}>📋 Copy image</S.ShareItem>
+            <S.ShareItem onClick={shareText}>📝 Copy text</S.ShareItem>
+          </S.ShareSheet>
+        </S.SharePop>
+      )}
     </>
   )
 
@@ -298,6 +419,7 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
       <S.TagInput
         value={tagText}
         readOnly={locked}
+        onDoubleClick={enterEdit}
         placeholder={n.tags?.length ? 'Add tag…' : 'Type #tag then Enter'}
         onChange={(e) => setTagText(e.target.value)}
         onKeyDown={(e) => {
@@ -311,11 +433,22 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
     </S.TagBar>
   )
 
+  // 캡처용: 해시태그 칩(위치 이동) / 본문 전체(div, 안 잘림)
+  const capTags =
+    capturing && n.tags?.length ? (
+      <S.CapTags>
+        {n.tags.map((t) => (
+          <S.CapTag key={t}>#{t}</S.CapTag>
+        ))}
+      </S.CapTags>
+    ) : null
+  const capBody = capturing ? <S.CapBody>{n.body || ''}</S.CapBody> : null
+
   // ── 모바일 레이아웃: [작은 사진 | 제목/검색 + X] → 본문이 나머지 채움 ──
   if (isMobile) {
     return createPortal(
       <S.Overlay>
-        <S.MPaper>
+        <S.MPaper ref={paperRef} $cap={capturing}>
           {editingBadge && (
             <S.MBadgeWrap>
               <BadgeEditor node={n} onClose={() => setEditingBadge(false)} />
@@ -370,6 +503,7 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
                   value={n.name}
                   placeholder="Untitled"
                   readOnly={locked}
+                  onDoubleClick={enterEdit}
                   onChange={(e) => updateNode(n.id, { name: e.target.value })}
                 />
                 {searching ? (
@@ -396,8 +530,22 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
                   ✕
                 </S.Close>
               </S.MTitleRow>
+              {capTags}
               {searchRow}
-              {canSwap && <S.SwapBtn onClick={doSwap}>⇄ Swap in</S.SwapBtn>}
+              {canSwap ? (
+                <S.ActionRow>
+                  <S.SwapBtn style={{ flex: 8 }} onClick={doSwap}>
+                    ⇄ Swap in
+                  </S.SwapBtn>
+                  <S.ShareBtn style={{ flex: 2 }} onClick={doShare} title="Share this note">
+                    📤
+                  </S.ShareBtn>
+                </S.ActionRow>
+              ) : (
+                <S.ShareBtn style={{ width: '100%' }} onClick={doShare} title="Share this note">
+                  📤 Share
+                </S.ShareBtn>
+              )}
             </S.MMeta>
           </S.MHead>
 
@@ -426,10 +574,12 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
 
           <S.Body
             value={n.body ?? ''}
-            placeholder={locked ? 'Tap ✎ to edit' : 'Write your note…'}
+            placeholder={locked ? 'Double-tap to edit' : 'Write your note…'}
             readOnly={locked}
+            onDoubleClick={enterEdit} // 더블탭 → 바로 수정+키패드
             onChange={(e) => updateNode(n.id, { body: e.target.value })}
           />
+          {capBody}
           {tagBar}
         </S.MPaper>
         {extras}
@@ -440,7 +590,7 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
 
   return createPortal(
     <S.Overlay>
-      <S.Paper>
+      <S.Paper ref={paperRef} $cap={capturing}>
         <S.Left>
           <S.Thumb
             ref={thumbRef}
@@ -455,13 +605,25 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
             {badgeChip}
             {editingBadge && <BadgeEditor node={n} onClose={() => setEditingBadge(false)} />}
           </S.Thumb>
-          <S.SwapBtn
-            disabled={!canSwap}
-            onClick={doSwap}
-            title={canSwap ? 'Bring this note into the slot; the current one goes to the library' : 'Search and pick another note to swap in'}
-          >
-            ⇄ Swap in
-          </S.SwapBtn>
+          {capTags}
+          {canSwap ? (
+            <S.ActionRow>
+              <S.SwapBtn
+                style={{ flex: 8 }}
+                onClick={doSwap}
+                title="Bring this note into the slot; the current one goes to the library"
+              >
+                ⇄ Swap in
+              </S.SwapBtn>
+              <S.ShareBtn style={{ flex: 2 }} onClick={doShare} title="Share this note">
+                📤
+              </S.ShareBtn>
+            </S.ActionRow>
+          ) : (
+            <S.ShareBtn style={{ width: '100%' }} onClick={doShare} title="Share this note">
+              📤 Share
+            </S.ShareBtn>
+          )}
           {searchRow}
           <S.Results>
             {results.length === 0 ? (
@@ -509,6 +671,7 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
             placeholder="Write your note…"
             onChange={(e) => updateNode(n.id, { body: e.target.value })}
           />
+          {capBody}
           <S.TagBar>
             {(n.tags || []).map((t) => (
               <S.Tag key={t}>

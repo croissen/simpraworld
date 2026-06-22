@@ -1,9 +1,11 @@
+import { useEffect, useRef } from 'react'
 import ColorPicker from './ColorPicker'
 import {
   addAsset,
   enterFolder,
   getAspectLocked,
   getCurrentSpace,
+  getNode,
   getPlacement,
   getSelectedNode,
   getSoleSelectedPid,
@@ -15,6 +17,7 @@ import {
   selectionCount,
   setAspectLocked,
   setPlacementXY,
+  setRadiusLive,
   togglePlacementLock,
   updateNode,
 } from '../store'
@@ -45,6 +48,14 @@ export default function Inspector({
 }) {
   const lockRatio = getAspectLocked() // 인스펙터·캔버스 공유
 
+  // 라디우스 ▲▼ 꾹누름(연속 변경) — 훅은 early return 전에 선언
+  const radHold = useRef<ReturnType<typeof setInterval> | null>(null)
+  useEffect(() => {
+    return () => {
+      if (radHold.current) clearInterval(radHold.current)
+    }
+  }, [])
+
   // 다중 선택 → Position / Component / Copy / Delete 만
   if (selectionCount() > 1)
     return <MultiInspector onRequestDelete={onRequestDelete} onCreateComponent={onCreateComponent} />
@@ -69,6 +80,21 @@ export default function Inspector({
     v = Math.max(8, v)
     if (lockRatio && n.h) updateNode(n.id, { h: v, w: Math.max(8, Math.round(n.w * (v / n.h))) })
     else updateNode(n.id, { h: v })
+  }
+
+  // 라디우스 ▲▼: 누르면 1 변경, 꾹 누르면 연속(현재값 기준), 손 떼면 히스토리 1회 기록
+  const stopRad = () => {
+    if (radHold.current) {
+      clearInterval(radHold.current)
+      radHold.current = null
+      if (n) updateNode(n.id, {}) // 한 번만 commit(되돌리기 1스텝)
+    }
+  }
+  const startRad = (delta: number) => {
+    if (!n) return
+    const step = () => setRadiusLive(n.id, (getNode(n.id)?.radius || 0) + delta)
+    step()
+    radHold.current = setInterval(step, 90)
   }
 
   async function onPickImage() {
@@ -261,18 +287,18 @@ export default function Inspector({
           {isText ? (
             // 텍스트: 디멘션 락 = 고정 폭 줄바꿈(wrap). 풀면 오른쪽 무한 입력.
             <S.Lock
-              $on={!!n.wrap}
+              $on={!!n.lock}
               onClick={() =>
                 updateNode(
                   n.id,
-                  n.wrap
-                    ? { wrap: false, body: textLines(n, n.w).join('\n') } // 풀 때 현재 줄바꿈을 \n로 고정
-                    : { wrap: true },
+                  n.lock
+                    ? { lock: false } // 락 해제 → 자유 크기/줄바꿈
+                    : { lock: true, wrap: false, body: textLines(n, n.w).join('\n') }, // 현재 줄바꿈 고정 + 비율락
                 )
               }
-              title={n.wrap ? 'Unlock width (no wrap)' : 'Lock width → wrap text'}
+              title={n.lock ? 'Unlock size' : 'Lock size (keep ratio, no shrink below text)'}
             >
-              {n.wrap ? '🔒' : '🔓'}
+              {n.lock ? '🔒' : '🔓'}
             </S.Lock>
           ) : (
             <S.Lock $on={lockRatio} onClick={() => setAspectLocked(!lockRatio)} title="Lock ratio">
@@ -294,6 +320,24 @@ export default function Inspector({
               onCommit={(v) => updateNode(n.id, { radius: Math.max(0, Number(v)) })}
             />
           </S.DimBox>
+          <S.Chip
+            title="Decrease (hold to repeat)"
+            onPointerDown={() => startRad(-1)}
+            onPointerUp={stopRad}
+            onPointerLeave={stopRad}
+            onPointerCancel={stopRad}
+          >
+            ▼
+          </S.Chip>
+          <S.Chip
+            title="Increase (hold to repeat)"
+            onPointerDown={() => startRad(1)}
+            onPointerUp={stopRad}
+            onPointerLeave={stopRad}
+            onPointerCancel={stopRad}
+          >
+            ▲
+          </S.Chip>
         </S.NumRow>
       </S.Field>
 

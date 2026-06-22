@@ -1,4 +1,4 @@
-import styled from 'styled-components'
+import styled, { css } from 'styled-components'
 
 export const Overlay = styled.div`
   position: fixed;
@@ -12,7 +12,7 @@ export const Overlay = styled.div`
 `
 
 // 흰 "종이" — 왼쪽(사진/검색) + 오른쪽(메모장) 2단
-export const Paper = styled.div`
+export const Paper = styled.div<{ $cap?: boolean }>`
   width: 100%;
   max-width: 780px;
   height: 72%;
@@ -27,6 +27,7 @@ export const Paper = styled.div`
   @media (max-width: 620px) {
     flex-direction: column;
   }
+  ${(p) => p.$cap && hideForCap}
 `
 
 /* ── 왼쪽: 정사각 썸네일 + 교체 + 태그검색 ── */
@@ -224,6 +225,7 @@ export const SwapBtn = styled.button`
   background: #10311f;
   color: #c2f0d4;
   font-size: 13px;
+  line-height: 1.2;
   cursor: pointer;
   &:hover:not(:disabled) {
     border-color: #3ddc7f;
@@ -231,6 +233,65 @@ export const SwapBtn = styled.button`
   &:disabled {
     opacity: 0.4;
     cursor: default;
+  }
+`
+
+/* Swap in + Share 한 줄(8:2). Swap 없을 땐 Share만 꽉 채움 */
+export const ActionRow = styled.div`
+  display: flex;
+  gap: 6px;
+`
+
+export const ShareBtn = styled.button`
+  flex: none;
+  padding: 9px;
+  border-radius: 9px;
+  border: 1px solid #41506e;
+  background: #1b2030;
+  color: #dbe3f4;
+  font-size: 13px;
+  line-height: 1.2; /* SwapBtn(텍스트)과 동일 높이 → 이모지 때문에 행이 커져 구분선 밀리는 것 방지 */
+  cursor: pointer;
+  &:hover {
+    border-color: #3ddc7f;
+  }
+`
+
+/* 공유 팝업(갤러리/클립보드/텍스트) */
+export const SharePop = styled.div`
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  background: #00000066;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+`
+export const ShareSheet = styled.div`
+  width: 100%;
+  max-width: 280px;
+  background: #20242e;
+  border: 1px solid #39435a;
+  border-radius: 14px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 16px 50px #000a;
+`
+export const ShareItem = styled.button`
+  width: 100%;
+  text-align: left;
+  background: #2b3346;
+  border: 1px solid #41506e;
+  color: #e8ecf3;
+  border-radius: 10px;
+  padding: 14px 16px;
+  font-size: 15px;
+  cursor: pointer;
+  &:active {
+    background: #354060;
   }
 `
 
@@ -263,14 +324,17 @@ export const SearchRow = styled.div`
 `
 export const ClearBtn = styled.button`
   flex: none;
-  width: 32px;
-  height: 33px;
+  width: 30px;
+  height: 30px;
   border: 1px solid #d4cdb9;
   background: #efece2;
   color: #5a564a;
   border-radius: 8px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   &:active {
     background: #e3dece;
   }
@@ -395,7 +459,7 @@ export const Body = styled.textarea`
 `
 
 /* ── 모바일 전용: 헤더(작은 사진 + 제목/검색 + X) → 본문이 나머지 채움 ── */
-export const MPaper = styled.div`
+export const MPaper = styled.div<{ $cap?: boolean }>`
   position: relative;
   width: 100%;
   height: 92%;
@@ -406,6 +470,7 @@ export const MPaper = styled.div`
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  ${(p) => p.$cap && hideForCap}
 `
 export const MHead = styled.div`
   display: flex;
@@ -513,8 +578,8 @@ export const MThumbMenu = styled.div`
   cursor: pointer;
 `
 export const PBtn = styled.button<{ $c?: 'del' | 'rep' | 'view' }>`
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   border-radius: 7px;
   border: none;
   cursor: pointer;
@@ -599,5 +664,42 @@ export const TagInput = styled.input`
   padding: 4px 2px;
   &::placeholder {
     color: #a39e8f;
+  }
+`
+
+/* 캡처 시 해시태그 칩(위치만 이동): 칩은 줄바꿈 안 되고(통째로), 많으면 다음 줄로 */
+export const CapTags = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+`
+export const CapTag = styled.span`
+  background: #e6ecfb;
+  border: 1px solid #c4d3f5;
+  color: #2a3f6b;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  white-space: nowrap; /* #호날도 가 중간에 안 잘리게 */
+`
+/* 캡처 시 본문: textarea 대신 div로 전체 내용 표시(길면 아래로 계속 이어짐) */
+export const CapBody = styled.div`
+  flex: 1;
+  padding: 16px 18px;
+  font-size: 15px;
+  line-height: 1.65;
+  color: #2b2a26;
+  white-space: pre-wrap;
+  word-break: break-word;
+`
+
+/* 공유 캡처: 조작 버튼·기본 태그바·textarea 숨기고, 창은 내용만큼 늘림(긴 글 안 잘림) */
+const hideForCap = css`
+  height: auto;
+  max-height: none;
+  overflow: visible;
+  ${Close}, ${Revert}, ${SwapBtn}, ${ShareBtn}, ${ActionRow}, ${SearchRow}, ${Results},
+  ${MResults}, ${ClearBtn}, ${TagInput}, ${TagBar}, ${Body} {
+    display: none !important;
   }
 `

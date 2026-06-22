@@ -119,6 +119,12 @@ export default function ComponentsPanel({
                     </>
                   )}
                 </S.ItemMain>
+                <S.UseBtn
+                  onClick={(e) => (e.stopPropagation(), stampComponent(c.id))}
+                  title="Place this component in the current space"
+                >
+                  Use
+                </S.UseBtn>
                 <S.IconBtn onClick={(e) => (e.stopPropagation(), setEditingId(c.id))} title="Rename">
                   ✎
                 </S.IconBtn>

@@ -659,7 +659,8 @@ export default function InfiniteCanvas() {
             ax: it.x - co.sx * (it.w / 2), // 반대편 코너(고정점) 월드좌표
             ay: it.y - co.sy * (it.h / 2),
             ratio: it.w / Math.max(1, it.h),
-            lock: getAspectLocked(), // 인스펙터 🔒 토글을 그대로 따름(사진·도형 공통)
+            // 텍스트는 자기 lock(비율 유지+최소 글자), 그 외는 인스펙터 공통 비율락
+            lock: it.type === 'text' ? !!getNode(it.nodeId)?.lock : getAspectLocked(),
           }
         }
       }
@@ -739,9 +740,9 @@ export default function InfiniteCanvas() {
         mode = 'resize'
         resizeOp = handle
         dragItem = null
-        // 텍스트는 직접 크기 조절하는 순간 width 락(wrap) → 자유롭게 줄고 그 폭에서 줄바꿈
+        // 락 안 걸린 텍스트는 크기 조절하는 순간 폭 자동줄바꿈(wrap) 모드로
         const hn = getNode(handle.nodeId)
-        if (hn?.type === 'text' && !hn.wrap) updateNode(hn.id, { wrap: true })
+        if (hn?.type === 'text' && !hn.lock && !hn.wrap) updateNode(hn.id, { wrap: true })
         return
       }
 
@@ -833,17 +834,21 @@ export default function InfiniteCanvas() {
         downAt = p
       } else if (mode === 'resize' && resizeOp) {
         const w = s2w(p.x, p.y)
-        // 텍스트는 내용(글자)보다 작아지지 않게. wrap이면 폭 자유(최소40)+높이는 줄바꿈 결과 따라.
         const rnode = getNode(resizeOp.nodeId)
         const isTextNode = rnode?.type === 'text'
-        const isWrap = isTextNode && !!rnode!.wrap
+        // 텍스트: 락=비율유지+글자 최소 / 언락=폭 자유 + 폭에 맞춰 줄바꿈(높이 자동)
         let minW = 8
-        if (isTextNode) minW = isWrap ? 40 : measureTextNode(rnode!).w
+        if (isTextNode) minW = rnode!.lock || !rnode!.wrap ? measureTextNode(rnode!).w : 40
         const newW = Math.max(minW, Math.abs(w.x - resizeOp.ax))
-        let minH = 8
-        if (isTextNode) minH = isWrap ? wrappedHeight(rnode!, newW) : measureTextNode(rnode!).h
-        let newH = Math.max(minH, Math.abs(w.y - resizeOp.ay))
-        if (resizeOp.lock) newH = newW / resizeOp.ratio // 사진=비율 유지(가로 기준)
+        let newH: number
+        if (resizeOp.lock) {
+          newH = newW / resizeOp.ratio // 비율 유지(사진·락 텍스트)
+          if (isTextNode) newH = Math.max(newH, measureTextNode(rnode!).h)
+        } else {
+          let minH = 8
+          if (isTextNode) minH = rnode!.wrap ? wrappedHeight(rnode!, newW) : measureTextNode(rnode!).h
+          newH = Math.max(minH, Math.abs(w.y - resizeOp.ay))
+        }
         setNodeSizeLive(resizeOp.nodeId, newW, newH)
         moveNodeLive(
           resizeOp.pid,

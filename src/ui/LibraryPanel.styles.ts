@@ -20,6 +20,7 @@ export const Panel = styled.aside`
   @media (max-width: 640px) {
     width: auto;
     right: 12px;
+    top: 50%; /* 모바일: 아래 절반만 채움 */
   }
 `
 

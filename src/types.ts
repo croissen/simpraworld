@@ -48,7 +48,8 @@ export interface SNode {
   bold?: boolean // text 개체 굵게
   align?: 'left' | 'center' | 'right' // text 개체 가로 정렬(기본 left)
   valign?: 'top' | 'middle' | 'bottom' // text 개체 세로 정렬(기본 top)
-  wrap?: boolean // text 개체: 고정 폭에서 자동 줄바꿈(기본 false=오른쪽 무한)
+  wrap?: boolean // text 개체: 폭에 맞춰 자동 줄바꿈(크기 조절하면 켜짐). 기본 false=오른쪽 무한
+  lock?: boolean // text 개체: 크기 락(비율 유지 + 글자보다 작아지지 않음)
   body?: string // 메모 본문 / text 개체 내용
   tags?: string[] // 해시태그(연관 메모 묶기·검색·교체용). '#' 없이 저장.
   badge?: string // 좌상단 배지(유통기한·능력치·직급 등 짧은 라벨). 비면 캔버스에 안 보임.
@@ -85,6 +86,7 @@ export interface SpaceItem {
   align?: 'left' | 'center' | 'right'
   valign?: 'top' | 'middle' | 'bottom'
   wrap?: boolean
+  lock?: boolean
   body?: string
   badge?: string
   badgeSize?: number

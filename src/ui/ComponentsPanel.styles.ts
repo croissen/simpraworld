@@ -5,7 +5,7 @@ export const Panel = styled.aside`
   top: 56px;
   left: 12px;
   bottom: 12px;
-  width: 240px;
+  width: 290px;
   z-index: 30;
   background: #161b27ee;
   border: 1px solid #2b3346;
@@ -20,6 +20,7 @@ export const Panel = styled.aside`
   @media (max-width: 640px) {
     width: auto;
     right: 12px;
+    top: 50%; /* 모바일: 아래 절반만 채움 */
   }
 `
 
@@ -117,6 +118,22 @@ export const ItemMeta = styled.div`
   margin-top: 2px;
 `
 
+/* 컴포넌트를 현재 공간에 배치하는 Use 버튼(모바일·PC 공통, 더블클릭 대용) */
+export const UseBtn = styled.button`
+  flex: none;
+  background: #15391f;
+  border: 1px solid #3ddc7f;
+  color: #7cffb0;
+  padding: 5px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  &:hover {
+    background: #1c4a29;
+  }
+`
+
 export const IconBtn = styled.button`
   flex: none;
   width: 26px;
@@ -148,7 +165,7 @@ export const Hint = styled.div`
 export const Preview = styled.div`
   position: absolute;
   top: 56px;
-  left: 264px;
+  left: 314px;
   z-index: 30;
   width: 240px;
   max-height: 60%;

@@ -25,7 +25,7 @@ export const Side = styled.div`
 // 중앙 현재 폴더 (드롭다운 트리거) — 고정폭, 길면 …, 드롭다운이 툴바보다 위(z-index)
 export const Center = styled.div`
   justify-self: center;
-  width: 150px;
+  width: 210px;
   display: flex;
   justify-content: center;
   position: relative;
