@@ -198,12 +198,16 @@ export default function App() {
       {getComponentsOpen() && <ComponentsPanel onRequestDelete={setDelComp} />}
       {getLibraryOpen() && <LibraryPanel />}
       {selCount > 0 ? (
-        // 모바일은 개체의 액션 버튼을 눌러야(editOpen) 편집 패널이 뜸. PC는 선택 즉시.
-        !isMobile || getEditOpen() ? (
-          <Inspector onRequestDelete={requestDelete} onCreateComponent={requestCreateComponent} />
-        ) : (
-          <ObjectActions />
-        )
+        <>
+          {/* 모바일은 개체의 액션 버튼을 눌러야(editOpen) 편집 패널이 뜸. PC는 선택 즉시. */}
+          {!isMobile || getEditOpen() ? (
+            <Inspector onRequestDelete={requestDelete} onCreateComponent={requestCreateComponent} />
+          ) : (
+            <ObjectActions />
+          )}
+          {/* 모바일: 개체 선택 중에도 우상단 좌표바 유지 */}
+          {isMobile && <ViewPanel />}
+        </>
       ) : (
         <ViewPanel />
       )}

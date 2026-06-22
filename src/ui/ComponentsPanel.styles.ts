@@ -79,8 +79,8 @@ export const Item = styled.div<{ $on?: boolean }>`
   display: flex;
   align-items: center;
   gap: 6px;
-  background: ${(p) => (p.$on ? '#1a2440' : '#0f1320')};
-  border: 1px solid ${(p) => (p.$on ? '#5b8cff' : '#2b3346')};
+  background: ${(p) => (p.$on ? '#10311f' : '#0f1320')};
+  border: 1px solid ${(p) => (p.$on ? '#3ddc7f' : '#2b3346')};
   color: #dbe3f4;
   border-radius: 9px;
   padding: 8px 9px;
@@ -103,7 +103,7 @@ export const ItemName = styled.div`
 export const RenameInput = styled.input`
   width: 100%;
   background: #161b27;
-  border: 1px solid #5b8cff;
+  border: 1px solid #3ddc7f;
   color: #e8ecf3;
   border-radius: 6px;
   padding: 4px 6px;

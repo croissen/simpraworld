@@ -54,10 +54,10 @@ export const Brand = styled.button<{ $armed?: boolean }>`
   white-space: nowrap;
   padding: 4px 11px;
   border-radius: 999px;
-  border: 1px solid ${(p) => (p.$armed ? '#5b8cff' : 'transparent')};
-  background: ${(p) => (p.$armed ? '#5b8cff' : 'transparent')};
-  color: ${(p) => (p.$armed ? '#fff' : '#9fb4ff')};
-  box-shadow: ${(p) => (p.$armed ? '0 0 0 4px #5b8cff33' : 'none')};
+  border: 1px solid ${(p) => (p.$armed ? '#00FF41' : 'transparent')};
+  background: ${(p) => (p.$armed ? '#00FF41' : 'transparent')};
+  color: ${(p) => (p.$armed ? '#000' : '#00FF41')};
+  box-shadow: ${(p) => (p.$armed ? '0 0 0 4px #00FF4133' : 'none')};
   transition: background 0.22s ease, color 0.22s ease, border-color 0.22s ease,
     box-shadow 0.22s ease, padding 0.22s ease;
   ${(p) =>
@@ -66,7 +66,7 @@ export const Brand = styled.button<{ $armed?: boolean }>`
       animation: ${pop} 0.25s ease;
     `}
   &:hover {
-    color: ${(p) => (p.$armed ? '#fff' : '#c5d2ff')};
+    color: ${(p) => (p.$armed ? '#000' : '#33FF66')};
   }
 
   @media (max-width: 640px) {

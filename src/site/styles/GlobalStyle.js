@@ -2,23 +2,23 @@ import { createGlobalStyle } from 'styled-components'
 
 /**
  * 사이트 전체 색상 — 여기만 바꾸면 전 페이지 톤이 변경됨.
- * 라이트 테마 (Policy 페이지와 동일 톤).
+ * 매트릭스 테마 (검은 배경 · 초록 포인트 · 흰 본문).
  */
 export const theme = {
-  bg: '#F7F8FA',                     // 본문 배경
-  bg2: '#FFFFFF',                    // 카드/박스 배경
-  bg3: '#F0F0F4',                    // 카드 호버 배경
-  border: 'rgba(0,0,0,0.08)',        // 옅은 구분선
-  border2: 'rgba(0,0,0,0.18)',       // 진한 구분선
-  text: '#1C1C1E',                   // 본문 글자
-  text2: '#5A5A66',                  // 보조 글자
-  text3: '#8E8E96',                  // 옅은 글자 / 라벨
-  accent: '#4A6FA5',                 // 포인트 (제목·뱃지·링크)
-  accent2: '#3D5A8A',                // 포인트 hover
-  accentSoftBg: 'rgba(74,111,165,0.08)',
-  accentSoftBorder: 'rgba(74,111,165,0.2)',
-  onAccent: '#FFFFFF',               // accent 배경 위의 글자색
-  navBg: 'rgba(247,248,250,0.85)',   // nav 배경 (반투명)
+  bg: '#000000',                     // 본문 배경 (검정)
+  bg2: '#0A0F0A',                    // 카드/박스 배경
+  bg3: '#101810',                    // 카드 호버 배경
+  border: 'rgba(0,255,65,0.16)',     // 옅은 구분선 (초록 틴트)
+  border2: 'rgba(0,255,65,0.32)',    // 진한 구분선
+  text: '#FFFFFF',                   // 본문 글자 (흰색)
+  text2: '#A8C8A8',                  // 보조 글자 (옅은 초록빛)
+  text3: '#5C7A5C',                  // 옅은 글자 / 라벨
+  accent: '#00FF41',                 // 포인트 (제목·뱃지·링크) — 매트릭스 그린
+  accent2: '#33FF66',                // 포인트 hover
+  accentSoftBg: 'rgba(0,255,65,0.08)',
+  accentSoftBorder: 'rgba(0,255,65,0.25)',
+  onAccent: '#000000',               // accent(밝은 초록) 배경 위의 글자색 = 검정
+  navBg: 'rgba(0,0,0,0.85)',         // nav 배경 (반투명 검정)
   mono: "'Space Mono', monospace",
   sans: "'Pretendard', sans-serif",
 }

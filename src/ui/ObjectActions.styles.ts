@@ -34,7 +34,7 @@ export const Btn = styled.button`
   justify-content: center;
   transition: background 0.12s ease, color 0.12s ease;
   &:active {
-    background: #5b8cff33;
+    background: #3ddc7f33;
     color: #fff;
   }
 `

@@ -58,7 +58,7 @@ export const Search = styled.input`
   font-size: 13px;
   outline: none;
   &:focus {
-    border-color: #5b8cff;
+    border-color: #3ddc7f;
   }
 `
 
@@ -79,7 +79,7 @@ export const Row = styled.div<{ $depth?: number; $stored?: boolean; $current?: b
   border-radius: 7px;
   cursor: default;
   opacity: ${(p) => (p.$stored ? 0.6 : 1)};
-  background: ${(p) => (p.$current ? '#1a2440' : 'transparent')};
+  background: ${(p) => (p.$current ? '#10311f' : 'transparent')};
   &:hover {
     background: #1d2436;
   }
@@ -133,15 +133,15 @@ export const Badge = styled.span<{ $exposed?: boolean }>`
 
 export const UseBtn = styled.button`
   flex: none;
-  background: #1a2440;
+  background: #10311f;
   border: 1px solid #41506e;
-  color: #cfe0ff;
+  color: #c2f0d4;
   border-radius: 7px;
   padding: 2px 8px;
   font-size: 11px;
   cursor: pointer;
   &:hover {
-    border-color: #5b8cff;
+    border-color: #3ddc7f;
   }
 `
 

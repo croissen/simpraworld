@@ -253,7 +253,7 @@ export default function InfiniteCanvas() {
           const hw = Math.max((it.w / 2) * c.zoom, 2)
           const hh = Math.max((it.h / 2) * c.zoom, 2)
           ctx.fillStyle = '#fff'
-          ctx.strokeStyle = '#5b8cff'
+          ctx.strokeStyle = '#3ddc7f'
           ctx.lineWidth = 2
           for (const cx of [ctr.x - hw, ctr.x + hw])
             for (const cy of [ctr.y - hh, ctr.y + hh]) {
@@ -273,7 +273,7 @@ export default function InfiniteCanvas() {
         const h = Math.abs(marquee.y1 - marquee.y0)
         const linking = mode === 'link'
         ctx.fillStyle = linking ? 'rgba(52,201,138,0.10)' : 'rgba(91,140,255,0.12)'
-        ctx.strokeStyle = linking ? '#34c98a' : '#5b8cff'
+        ctx.strokeStyle = linking ? '#34c98a' : '#3ddc7f'
         ctx.lineWidth = 1
         ctx.fillRect(x, y, w, h)
         ctx.strokeRect(x, y, w, h)

@@ -31,7 +31,7 @@ export const Sep = styled.span`
 
 export const RootInput = styled.input`
   background: #0f1320;
-  border: 1px solid #5b8cff;
+  border: 1px solid #3ddc7f;
   color: #e8ecf3;
   padding: 4px 8px;
   border-radius: 6px;

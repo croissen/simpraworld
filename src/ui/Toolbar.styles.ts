@@ -91,10 +91,10 @@ export const savedPop = keyframes`
 
 export const Button = styled.button<{ $on?: boolean; $danger?: boolean; $saved?: boolean }>`
   background: ${(p) =>
-    p.$saved ? '#15391f' : p.$danger ? '#4a2230' : p.$on ? '#1a2440' : '#1b2030'};
+    p.$saved ? '#15391f' : p.$danger ? '#4a2230' : p.$on ? '#10311f' : '#1b2030'};
   border: 1px solid
-    ${(p) => (p.$saved ? '#3ddc7f' : p.$danger ? '#8a3a48' : p.$on ? '#5b8cff' : '#2b3346')};
-  color: ${(p) => (p.$saved ? '#7CFFB0' : p.$danger ? '#ffc3cc' : p.$on ? '#cfe0ff' : '#dbe3f4')};
+    ${(p) => (p.$saved ? '#3ddc7f' : p.$danger ? '#8a3a48' : p.$on ? '#3ddc7f' : '#2b3346')};
+  color: ${(p) => (p.$saved ? '#7CFFB0' : p.$danger ? '#ffc3cc' : p.$on ? '#c2f0d4' : '#dbe3f4')};
   padding: 6px 10px;
   border-radius: 8px;
   cursor: pointer;

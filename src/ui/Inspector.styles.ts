@@ -139,10 +139,10 @@ export const AddComp = styled.button<{ $ok?: boolean }>`
   font-size: 11px;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
-  background: ${(p) => (p.$ok ? '#bff0cf' : '#1a2440')};
+  background: ${(p) => (p.$ok ? '#bff0cf' : '#10311f')};
   border: 1px solid ${(p) => (p.$ok ? '#7fd6a0' : '#41506e')};
-  color: ${(p) => (p.$ok ? '#1f6b3f' : '#cfe0ff')};
-  &:hover { border-color: ${(p) => (p.$ok ? '#7fd6a0' : '#5b8cff')}; }
+  color: ${(p) => (p.$ok ? '#1f6b3f' : '#c2f0d4')};
+  &:hover { border-color: ${(p) => (p.$ok ? '#7fd6a0' : '#3ddc7f')}; }
 `
 
 export const NumRow = styled.div`
@@ -194,8 +194,8 @@ export const DimBox = styled.label`
 export const Lock = styled.button<{ $on?: boolean }>`
   flex: none;
   width: 34px;
-  background: ${(p) => (p.$on ? '#1a2440' : '#0f1320')};
-  border: 1px solid ${(p) => (p.$on ? '#5b8cff' : '#2b3346')};
+  background: ${(p) => (p.$on ? '#10311f' : '#0f1320')};
+  border: 1px solid ${(p) => (p.$on ? '#3ddc7f' : '#2b3346')};
   border-radius: 8px;
   padding: 6px 0;
   cursor: pointer;
@@ -215,8 +215,8 @@ export const ColorBtn = styled.input`
 `
 
 export const Chip = styled.button<{ $on?: boolean }>`
-  background: ${(p) => (p.$on ? '#1a2440' : '#0f1320')};
-  border: 1px solid ${(p) => (p.$on ? '#5b8cff' : '#2b3346')};
+  background: ${(p) => (p.$on ? '#10311f' : '#0f1320')};
+  border: 1px solid ${(p) => (p.$on ? '#3ddc7f' : '#2b3346')};
   color: #cdd6ea;
   border-radius: 8px;
   padding: 6px 10px;

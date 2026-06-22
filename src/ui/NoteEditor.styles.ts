@@ -148,7 +148,7 @@ export const PopInput = styled.input`
   font-size: 12px;
   outline: none;
   &:focus {
-    border-color: #5b8cff;
+    border-color: #3ddc7f;
   }
 `
 export const PopArea = styled.textarea`
@@ -167,13 +167,13 @@ export const PopArea = styled.textarea`
   font-family: inherit;
   outline: none;
   &:focus {
-    border-color: #5b8cff;
+    border-color: #3ddc7f;
   }
 `
 export const SizeBtn = styled.button<{ $on?: boolean }>`
   flex: 1;
-  background: ${(p) => (p.$on ? '#1a2440' : '#0f1320')};
-  border: 1px solid ${(p) => (p.$on ? '#5b8cff' : '#2b3346')};
+  background: ${(p) => (p.$on ? '#10311f' : '#0f1320')};
+  border: 1px solid ${(p) => (p.$on ? '#3ddc7f' : '#2b3346')};
   color: #cdd6ea;
   border-radius: 6px;
   padding: 4px 0;
@@ -206,8 +206,8 @@ export const PopX = styled.button`
   }
 `
 export const PopBtn = styled.button<{ $on?: boolean }>`
-  background: ${(p) => (p.$on ? '#1a2440' : '#0f1320')};
-  border: 1px solid ${(p) => (p.$on ? '#5b8cff' : '#2b3346')};
+  background: ${(p) => (p.$on ? '#10311f' : '#0f1320')};
+  border: 1px solid ${(p) => (p.$on ? '#3ddc7f' : '#2b3346')};
   color: #cdd6ea;
   border-radius: 6px;
   padding: 4px 8px;
@@ -221,12 +221,12 @@ export const SwapBtn = styled.button`
   padding: 9px;
   border-radius: 9px;
   border: 1px solid #41506e;
-  background: #1a2440;
-  color: #cfe0ff;
+  background: #10311f;
+  color: #c2f0d4;
   font-size: 13px;
   cursor: pointer;
   &:hover:not(:disabled) {
-    border-color: #5b8cff;
+    border-color: #3ddc7f;
   }
   &:disabled {
     opacity: 0.4;
@@ -245,7 +245,7 @@ export const Search = styled.input`
   font-size: 13px;
   outline: none;
   &:focus {
-    border-color: #5b8cff;
+    border-color: #3ddc7f;
   }
 `
 
@@ -292,7 +292,7 @@ export const ResultItem = styled.button<{ $on?: boolean }>`
   text-align: left;
   padding: 5px 6px;
   border-radius: 8px;
-  border: 1px solid ${(p) => (p.$on ? '#5b8cff' : 'transparent')};
+  border: 1px solid ${(p) => (p.$on ? '#3ddc7f' : 'transparent')};
   background: ${(p) => (p.$on ? '#e6ecfb' : 'transparent')};
   cursor: pointer;
   &:hover {

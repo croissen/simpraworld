@@ -91,15 +91,15 @@ export const Box = styled.label`
 
 export const Go = styled.button`
   flex: 1;
-  background: #1a2440;
+  background: #10311f;
   border: 1px solid #41506e;
-  color: #cfe0ff;
+  color: #c2f0d4;
   border-radius: 8px;
   padding: 7px 0;
   cursor: pointer;
   font-size: 13px;
   &:hover {
-    border-color: #5b8cff;
+    border-color: #3ddc7f;
   }
 `
 

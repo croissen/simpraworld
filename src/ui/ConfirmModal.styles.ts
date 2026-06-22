@@ -34,7 +34,7 @@ export const Input = styled.input`
   margin-bottom: 16px;
   outline: none;
   &:focus {
-    border-color: #5b8cff;
+    border-color: #3ddc7f;
   }
 `
 export const Btns = styled.div`
@@ -44,14 +44,14 @@ export const Btns = styled.div`
 `
 export const Cancel = styled.button<{ $active?: boolean }>`
   background: #1b2030;
-  border: 1px solid ${(p) => (p.$active ? '#5b8cff' : '#2b3346')};
+  border: 1px solid ${(p) => (p.$active ? '#3ddc7f' : '#2b3346')};
   color: #dbe3f4;
   padding: 8px 14px;
   border-radius: 8px;
   cursor: pointer;
   font-size: 13px;
   outline: none;
-  box-shadow: ${(p) => (p.$active ? '0 0 0 2px #5b8cff55' : 'none')};
+  box-shadow: ${(p) => (p.$active ? '0 0 0 2px #3ddc7f55' : 'none')};
 `
 export const Ok = styled.button<{ $active?: boolean }>`
   background: #3a1620;

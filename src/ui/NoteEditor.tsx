@@ -305,9 +305,6 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
             e.preventDefault()
             e.stopPropagation()
             addTags()
-          } else if (e.key === 'Backspace' && !tagText && n.tags?.length) {
-            e.preventDefault()
-            removeTag(n.tags[n.tags.length - 1])
           }
         }}
       />
@@ -530,10 +527,6 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
                   e.preventDefault()
                   e.stopPropagation()
                   addTags()
-                } else if (e.key === 'Backspace' && !tagText && n.tags?.length) {
-                  // 빈 입력에서 Backspace → 마지막 태그 삭제
-                  e.preventDefault()
-                  removeTag(n.tags[n.tags.length - 1])
                 }
               }}
             />
