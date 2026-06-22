@@ -11,8 +11,11 @@ import {
   getAsset,
   DEFAULT_BADGE_SIZE,
   getAspectLocked,
+  getBgColor,
   getCamera,
   getDoc,
+  getGridBold,
+  getShowGrid,
   getPlacement,
   getSelectionSet,
   getSoleSelectedPid,
@@ -122,9 +125,9 @@ export default function InfiniteCanvas() {
       const c = getCamera()
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       // 배경
-      ctx.fillStyle = '#0f1115'
+      ctx.fillStyle = getBgColor()
       ctx.fillRect(0, 0, W, H)
-      drawGrid(W, H)
+      if (getShowGrid()) drawGrid(W, H)
 
       const items = itemsInCurrentSpace()
       // 엣지는 배치(placement) 단위. 각 배치는 고유 pid → 같은 노드 복사본끼리도 참조선이 따로.
@@ -308,7 +311,7 @@ export default function InfiniteCanvas() {
       if (step < 14) return // 너무 촘촘하면 생략
       const ox = ((-c.x * c.zoom + W / 2) % step + step) % step
       const oy = ((-c.y * c.zoom + H / 2) % step + step) % step
-      ctx.strokeStyle = 'rgba(255,255,255,0.04)'
+      ctx.strokeStyle = getGridBold() ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.04)'
       ctx.lineWidth = 1
       ctx.beginPath()
       for (let x = ox; x < W; x += step) {

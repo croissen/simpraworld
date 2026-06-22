@@ -114,3 +114,32 @@ export const Reset = styled.button`
   cursor: pointer;
   font-size: 15px;
 `
+
+export const Sep = styled.div`
+  height: 1px;
+  background: #2b3346;
+  margin: 2px 0;
+`
+
+export const Label = styled.span`
+  color: #8b95a8;
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+  letter-spacing: 0.04em;
+`
+
+export const Toggle = styled.button<{ $on?: boolean }>`
+  flex: none;
+  min-width: 52px;
+  background: ${(p) => (p.$on ? '#10311f' : '#1b2030')};
+  border: 1px solid ${(p) => (p.$on ? '#3ddc7f' : '#2b3346')};
+  color: ${(p) => (p.$on ? '#c2f0d4' : '#9aa6bd')};
+  border-radius: 8px;
+  padding: 6px 0;
+  cursor: pointer;
+  font-size: 13px;
+  &:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+`

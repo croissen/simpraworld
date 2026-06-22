@@ -1,5 +1,5 @@
 import { get, set } from 'idb-keyval'
-import { emptyDoc, uid } from './types'
+import { DEFAULT_BG, emptyDoc, uid } from './types'
 import type { Asset, ComponentDef, NodeType, Placement, SEdge, SimpraWorldDoc, SNode, SpaceItem } from './types'
 import { makeSampleWorld } from './sampleWorld'
 
@@ -151,6 +151,27 @@ export const selectionCount = () => selection.size
 export const getSoleSelectedPid = (): string | null =>
   selection.size === 1 ? [...selection][0] : null
 export const getUniverseName = () => doc.universeName || 'My Universe'
+
+// ── 캔버스 보기 설정 (배경색·그리드) — doc에 저장돼 .spu/새로고침에도 유지 ──
+export const getBgColor = () => doc.bgColor || DEFAULT_BG
+export function setBgColor(hex: string) {
+  doc.bgColor = hex
+  changed()
+}
+export function resetBgColor() {
+  doc.bgColor = DEFAULT_BG
+  changed()
+}
+export const getShowGrid = () => doc.showGrid !== false // 기본 true
+export function setShowGrid(on: boolean) {
+  doc.showGrid = on
+  changed()
+}
+export const getGridBold = () => !!doc.gridBold // 기본 false
+export function setGridBold(on: boolean) {
+  doc.gridBold = on
+  changed()
+}
 
 /** 저장 성공 시 호출 → "변경 없음" 상태로. */
 export const markSaved = () => {

@@ -105,7 +105,13 @@ export interface SimpraWorldDoc {
   edges: SEdge[]
   assets: Asset[]
   components: ComponentDef[]
+  bgColor?: string // 캔버스 배경색(없으면 기본 #0f1115)
+  showGrid?: boolean // 그리드 표시 여부(없으면 기본 true)
+  gridBold?: boolean // 그리드 선명하게(진하게)
 }
+
+// 캔버스 기본 배경색 (배경색 미설정 시 / 되돌리기 기준)
+export const DEFAULT_BG = '#0f1115'
 
 export function emptyDoc(): SimpraWorldDoc {
   return {

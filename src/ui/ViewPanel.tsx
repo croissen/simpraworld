@@ -1,5 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
-import { bumpUI, getCamera, setCamera } from '../store'
+import {
+  bumpUI,
+  getBgColor,
+  getCamera,
+  getGridBold,
+  getShowGrid,
+  resetBgColor,
+  setBgColor,
+  setCamera,
+  setGridBold,
+  setShowGrid,
+} from '../store'
+import ColorPicker from './ColorPicker'
 import * as S from './ViewPanel.styles'
 
 // 아무것도 선택 안 됐을 때 우상단 좌표 위젯.
@@ -80,6 +92,33 @@ export default function ViewPanel() {
           <S.Reset title="Back to 0, 0" onClick={reset}>
             ⟲
           </S.Reset>
+        </S.Row>
+
+        <S.Sep />
+
+        <S.Label>Background</S.Label>
+        <S.Row>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <ColorPicker value={getBgColor()} onChange={setBgColor} />
+          </div>
+          <S.Reset title="Default background" onClick={resetBgColor}>
+            ⟲
+          </S.Reset>
+        </S.Row>
+
+        <S.Row>
+          <S.Label style={{ flex: 1 }}>Grid</S.Label>
+          <S.Toggle $on={getShowGrid()} onClick={() => setShowGrid(!getShowGrid())}>
+            {getShowGrid() ? 'On' : 'Off'}
+          </S.Toggle>
+          <S.Toggle
+            $on={getShowGrid() && getGridBold()}
+            disabled={!getShowGrid()}
+            title="Make the grid more visible"
+            onClick={() => setGridBold(!getGridBold())}
+          >
+            Bold
+          </S.Toggle>
         </S.Row>
       </S.Card>
     </S.Wrap>
