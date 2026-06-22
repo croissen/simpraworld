@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { SEdge, SpaceItem } from '../types'
+import { measureTextNode, textLines, wrappedHeight } from '../textMeasure'
 import * as S from './InfiniteCanvas.styles'
 import {
   bumpUI,
@@ -14,8 +15,11 @@ import {
   getBgColor,
   getCamera,
   getDoc,
+  getEditingTextPid,
   getGridBold,
+  getNode,
   getShowGrid,
+  startTextEdit,
   getPlacement,
   getSelectionSet,
   getSoleSelectedPid,
@@ -33,6 +37,7 @@ import {
   setNodeSizeLive,
   swapPlacementNodes,
   togglePlacementEdge,
+  updateNode,
 } from '../store'
 
 // 노드 둘레 링 표시: null=없음, yellow=일반 선택, purple=유니크(공유) 선택, sibling=결속 형제(점선)
@@ -259,11 +264,11 @@ export default function InfiniteCanvas() {
           const hh = Math.max((it.h / 2) * c.zoom, 2)
           ctx.fillStyle = '#fff'
           ctx.strokeStyle = '#3ddc7f'
-          ctx.lineWidth = 2
+          ctx.lineWidth = 1.5
           for (const cx of [ctr.x - hw, ctr.x + hw])
             for (const cy of [ctr.y - hh, ctr.y + hh]) {
               ctx.beginPath()
-              ctx.arc(cx, cy, 5.5, 0, Math.PI * 2) // 네모 → 원 핸들
+              ctx.arc(cx, cy, 2.75, 0, Math.PI * 2) // 코너 핸들(절반 크기)
               ctx.fill()
               ctx.stroke()
             }
@@ -358,7 +363,7 @@ export default function InfiniteCanvas() {
       // LOD: 20% 미만이면 점으로 — 단, 사진은 아예 안 보이게(폴더·노트만 점)
       if (zoom < 0.2) {
         if (n.type === 'photo') return
-        ctx.fillStyle = n.color
+        ctx.fillStyle = n.color === 'none' ? n.textColor || '#fff' : n.color
         ctx.beginPath()
         ctx.arc(x, y, Math.max(2, rad), 0, Math.PI * 2)
         ctx.fill()
@@ -382,12 +387,42 @@ export default function InfiniteCanvas() {
           }
           ctx.drawImage(im, x - dw / 2, y - dh / 2, dw, dh)
         }
-      } else {
+      } else if (n.color !== 'none') {
         ctx.fillStyle = n.color
         drawShape(n, x, y, hw, hh, (n.radius || 0) * zoom)
         ctx.fill()
       }
       ctx.restore()
+
+      // 텍스트 개체: 박스 안에 글자(body) 그림. 정렬(왼/중앙/오른쪽), 위에서부터. 편집 중이면 생략(오버레이가 그림).
+      if (n.type === 'text' && n.body && getEditingTextPid() !== n.pid) {
+        const fs = (n.fontSize || 20) * zoom
+        if (fs >= 4) {
+          const align = n.align || 'left'
+          const pad = 4 * zoom
+          ctx.save()
+          ctx.fillStyle = n.textColor || '#ffffff'
+          ctx.font = `${n.bold ? '700 ' : ''}${fs}px system-ui, sans-serif`
+          ctx.textBaseline = 'top'
+          ctx.textAlign = align
+          const tx = align === 'center' ? x : align === 'right' ? x + hw - pad : x - hw + pad
+          const lines = textLines(n, n.w) // wrap이면 고정폭 줄바꿈, 아니면 \n 분리
+          const lineH = fs * 1.25
+          const totalH = lines.length * lineH
+          const valign = n.valign || 'top'
+          let ly =
+            valign === 'middle'
+              ? y - totalH / 2
+              : valign === 'bottom'
+                ? y + hh - pad - totalH
+                : y - hh + pad
+          for (const l of lines) {
+            ctx.fillText(l, tx, ly)
+            ly += lineH
+          }
+          ctx.restore()
+        }
+      }
 
       // 선택/공유 링: yellow=일반 선택, purple=유니크(공유) 선택, sibling=결속 형제(점선, 표시만)
       if (ring) {
@@ -400,8 +435,16 @@ export default function InfiniteCanvas() {
           ctx.lineWidth = 2.5
           ctx.setLineDash([])
         }
-        ctx.beginPath()
-        ctx.ellipse(x, y, hw + 6, hh + 6, 0, 0, Math.PI * 2)
+        const pad = 6
+        if (n.type === 'text') {
+          // 텍스트 = 네모(둥근 사각형) 테두리
+          const rr = Math.min(10, hw + pad, hh + pad)
+          roundRectPath(x - hw - pad, y - hh - pad, (hw + pad) * 2, (hh + pad) * 2, rr)
+        } else {
+          // 그 외 개체 = 동그라미(타원) 테두리
+          ctx.beginPath()
+          ctx.ellipse(x, y, hw + pad, hh + pad, 0, 0, Math.PI * 2)
+        }
         ctx.stroke()
         ctx.setLineDash([])
       }
@@ -446,8 +489,8 @@ export default function InfiniteCanvas() {
         }
       }
 
-      // 이름 (줌 충분할 때만). 사진 개체는 라벨 없이 순수 이미지만.
-      if (zoom >= 0.3 && n.type !== 'photo') {
+      // 이름 (줌 충분할 때만). 사진·텍스트 개체는 아래 라벨 없이(텍스트는 박스 안 글자만).
+      if (zoom >= 0.3 && n.type !== 'photo' && n.type !== 'text') {
         const fontPx = Math.max(11, Math.min(16, rad * 0.5))
         const tx = x
         const ty = y + hh + 4
@@ -696,6 +739,9 @@ export default function InfiniteCanvas() {
         mode = 'resize'
         resizeOp = handle
         dragItem = null
+        // 텍스트는 직접 크기 조절하는 순간 width 락(wrap) → 자유롭게 줄고 그 폭에서 줄바꿈
+        const hn = getNode(handle.nodeId)
+        if (hn?.type === 'text' && !hn.wrap) updateNode(hn.id, { wrap: true })
         return
       }
 
@@ -787,8 +833,16 @@ export default function InfiniteCanvas() {
         downAt = p
       } else if (mode === 'resize' && resizeOp) {
         const w = s2w(p.x, p.y)
-        const newW = Math.max(8, Math.abs(w.x - resizeOp.ax))
-        let newH = Math.max(8, Math.abs(w.y - resizeOp.ay))
+        // 텍스트는 내용(글자)보다 작아지지 않게. wrap이면 폭 자유(최소40)+높이는 줄바꿈 결과 따라.
+        const rnode = getNode(resizeOp.nodeId)
+        const isTextNode = rnode?.type === 'text'
+        const isWrap = isTextNode && !!rnode!.wrap
+        let minW = 8
+        if (isTextNode) minW = isWrap ? 40 : measureTextNode(rnode!).w
+        const newW = Math.max(minW, Math.abs(w.x - resizeOp.ax))
+        let minH = 8
+        if (isTextNode) minH = isWrap ? wrappedHeight(rnode!, newW) : measureTextNode(rnode!).h
+        let newH = Math.max(minH, Math.abs(w.y - resizeOp.ay))
         if (resizeOp.lock) newH = newW / resizeOp.ratio // 사진=비율 유지(가로 기준)
         setNodeSizeLive(resizeOp.nodeId, newW, newH)
         moveNodeLive(
@@ -887,6 +941,7 @@ export default function InfiniteCanvas() {
             if (!e.shiftKey && lastTapId === dragItem.pid && now - lastTapTime < 350) {
               if (dragItem.type === 'folder') enterFolder(dragItem.nodeId)
               else if (dragItem.type === 'memo') openNote(dragItem.nodeId, dragItem.pid)
+              else if (dragItem.type === 'text') startTextEdit(dragItem.pid)
             } else {
               select(dragItem.pid, e.shiftKey) // Shift = 토글(다중), 아니면 단독
             }

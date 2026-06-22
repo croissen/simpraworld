@@ -21,6 +21,7 @@ import {
 import { uid } from '../types'
 import type { Shape } from '../types'
 import { ICON_MAX, ICON_Q, fileToImage, pickImageFile } from '../image'
+import { textLines } from '../textMeasure'
 import CommitInput from './CommitInput'
 import MultiInspector from './MultiInspector'
 import * as S from './Inspector.styles'
@@ -51,6 +52,7 @@ export default function Inspector({
   const n = getSelectedNode()
   if (!n) return null
   const isPhoto = n.type === 'photo' // 사진은 글자색/컬러/Shape가 의미 없음 → 해당 항목 숨김
+  const isText = n.type === 'text' // 텍스트 개체: 내용/크기/볼드/글자색/배경색만
   const count = placementCount(n.id)
   const pid = getSoleSelectedPid()
   const pl = getPlacement(pid)
@@ -87,7 +89,15 @@ export default function Inspector({
   return (
     <S.Inspector>
       <S.Head>
-        <span>{n.type === 'folder' ? '📁 Folder' : n.type === 'photo' ? '🖼 Photo' : '📝 Note'}</span>
+        <span>
+          {n.type === 'folder'
+            ? '📁 Folder'
+            : n.type === 'photo'
+              ? '🖼 Photo'
+              : n.type === 'text'
+                ? 'Text'
+                : '📝 Note'}
+        </span>
         <S.Row>
           {getCurrentSpace() !== null && pid && (
             <S.Mini
@@ -105,32 +115,100 @@ export default function Inspector({
 
       {count > 1 && <S.RefNote>🔗 In {count} places · edits here apply everywhere</S.RefNote>}
 
-      <S.Field>
-        <S.LabelRow>
-          <span>Name</span>
-          <S.AddComp onClick={onCreateComponent} title="Save this node as a component (enter a name)">
-            + Component
-          </S.AddComp>
-        </S.LabelRow>
-        <S.NameRow>
-          <CommitInput value={n.name} onCommit={(v) => updateNode(n.id, { name: v })} />
-          <S.Lock
-            $on={!!n.emphasize}
-            onClick={() => updateNode(n.id, { emphasize: !n.emphasize })}
-            title="Emphasize label — soft shadow lift (readable on any background)"
-          >
-            💡
-          </S.Lock>
-        </S.NameRow>
-      </S.Field>
+      {/* 텍스트 개체는 캔버스에서 직접 클릭해 내용 수정 → 인스펙터엔 내용 입력칸 없음 */}
+      {!isText && (
+        <S.Field>
+          <S.LabelRow>
+            <span>Name</span>
+            <S.AddComp onClick={onCreateComponent} title="Save this node as a component (enter a name)">
+              + Component
+            </S.AddComp>
+          </S.LabelRow>
+          <S.NameRow>
+            <CommitInput value={n.name} onCommit={(v) => updateNode(n.id, { name: v })} />
+            <S.Lock
+              $on={!!n.emphasize}
+              onClick={() => updateNode(n.id, { emphasize: !n.emphasize })}
+              title="Emphasize label — soft shadow lift (readable on any background)"
+            >
+              💡
+            </S.Lock>
+          </S.NameRow>
+        </S.Field>
+      )}
+
+      {isText && (
+        <S.Field>
+          <span>Size & Bold</span>
+          <S.NumRow>
+            <S.DimBox>
+              <span>px</span>
+              <CommitInput
+                numeric
+                type="number"
+                value={Math.round(n.fontSize || 20)}
+                onCommit={(v) => updateNode(n.id, { fontSize: Math.max(6, Number(v)) })}
+              />
+            </S.DimBox>
+            <S.Lock $on={!!n.bold} onClick={() => updateNode(n.id, { bold: !n.bold })} title="Bold">
+              <b>B</b>
+            </S.Lock>
+          </S.NumRow>
+        </S.Field>
+      )}
 
       {!isPhoto && (
         <S.Field>
-          <span>Text color</span>
+          <span>{isText ? 'Text color' : 'Text color'}</span>
           <ColorPicker
             value={n.textColor || '#e8ecf3'}
             onChange={(v) => updateNode(n.id, { textColor: v })}
           />
+        </S.Field>
+      )}
+
+      {isText && (
+        <S.Field>
+          <span>Align</span>
+          <S.Row>
+            {(['left', 'center', 'right'] as const).map((a) => (
+              <S.Chip
+                key={a}
+                $on={(n.align || 'left') === a}
+                onClick={() => updateNode(n.id, { align: a })}
+                title={`Horizontal: ${a}`}
+              >
+                {a === 'left' ? 'L' : a === 'center' ? 'C' : 'R'}
+              </S.Chip>
+            ))}
+            {(['top', 'middle', 'bottom'] as const).map((v) => (
+              <S.Chip
+                key={v}
+                $on={(n.valign || 'top') === v}
+                onClick={() => updateNode(n.id, { valign: v })}
+                title={`Vertical: ${v}`}
+              >
+                {v === 'top' ? '↑' : v === 'middle' ? '↕' : '↓'}
+              </S.Chip>
+            ))}
+          </S.Row>
+        </S.Field>
+      )}
+
+      {isText && (
+        <S.Field>
+          <span>Background</span>
+          <S.Row>
+            <S.Chip
+              $on={n.color !== 'none'}
+              onClick={() => updateNode(n.id, { color: n.color === 'none' ? '#1b2030' : 'none' })}
+            >
+              {n.color !== 'none' ? 'On' : 'Off'}
+            </S.Chip>
+          </S.Row>
+          {n.color !== 'none' && (
+            <ColorPicker value={n.color} onChange={(v) => updateNode(n.id, { color: v })} />
+          )}
         </S.Field>
       )}
 
@@ -180,9 +258,27 @@ export default function Inspector({
             <span>H</span>
             <CommitInput numeric type="number" value={Math.round(n.h)} onCommit={(v) => setH(Number(v))} />
           </S.DimBox>
-          <S.Lock $on={lockRatio} onClick={() => setAspectLocked(!lockRatio)} title="Lock ratio">
-            {lockRatio ? '🔒' : '🔓'}
-          </S.Lock>
+          {isText ? (
+            // 텍스트: 디멘션 락 = 고정 폭 줄바꿈(wrap). 풀면 오른쪽 무한 입력.
+            <S.Lock
+              $on={!!n.wrap}
+              onClick={() =>
+                updateNode(
+                  n.id,
+                  n.wrap
+                    ? { wrap: false, body: textLines(n, n.w).join('\n') } // 풀 때 현재 줄바꿈을 \n로 고정
+                    : { wrap: true },
+                )
+              }
+              title={n.wrap ? 'Unlock width (no wrap)' : 'Lock width → wrap text'}
+            >
+              {n.wrap ? '🔒' : '🔓'}
+            </S.Lock>
+          ) : (
+            <S.Lock $on={lockRatio} onClick={() => setAspectLocked(!lockRatio)} title="Lock ratio">
+              {lockRatio ? '🔒' : '🔓'}
+            </S.Lock>
+          )}
         </S.NumRow>
       </S.Field>
 
@@ -219,7 +315,7 @@ export default function Inspector({
         </S.Row>
       </S.Field>
 
-      {!isPhoto && (
+      {!isPhoto && !isText && (
         <S.Field>
           <span>Shape</span>
           <S.Row>
@@ -232,7 +328,7 @@ export default function Inspector({
         </S.Field>
       )}
 
-      {!isPhoto && (
+      {!isPhoto && !isText && (
         <S.Field>
           <span>Color</span>
           <S.Row>
@@ -249,17 +345,19 @@ export default function Inspector({
         </S.Field>
       )}
 
-      <S.Field>
-        <span>Image</span>
-        <S.Row>
-          <S.Mini onClick={onPickImage}>{n.assetId ? 'Change image' : 'Add image'}</S.Mini>
-          {n.assetId && (
-            <S.Mini onClick={() => updateNode(n.id, { assetId: undefined, shape: 'rect' })}>
-              Remove image
-            </S.Mini>
-          )}
-        </S.Row>
-      </S.Field>
+      {!isText && (
+        <S.Field>
+          <span>Image</span>
+          <S.Row>
+            <S.Mini onClick={onPickImage}>{n.assetId ? 'Change image' : 'Add image'}</S.Mini>
+            {n.assetId && (
+              <S.Mini onClick={() => updateNode(n.id, { assetId: undefined, shape: 'rect' })}>
+                Remove image
+              </S.Mini>
+            )}
+          </S.Row>
+        </S.Field>
+      )}
 
       {count > 1 && pid && <S.Mini onClick={() => removePlacement(pid)}>Remove here</S.Mini>}
       <S.Delete onClick={onRequestDelete}>{count > 1 ? 'Delete everywhere' : 'Delete'}</S.Delete>

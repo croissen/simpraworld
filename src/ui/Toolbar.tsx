@@ -1,6 +1,7 @@
 import {
   addNode,
   addPhoto,
+  addText,
   canRedo,
   canUndo,
   getCamera,
@@ -151,6 +152,13 @@ export default function Toolbar() {
           </S.Button>,
           <S.Button key="photo" onClick={onPhoto} title="Add a photo from your device">
             + Photo
+          </S.Button>,
+          <S.Button
+            key="text"
+            onClick={() => addText(centerWorld().x, centerWorld().y)}
+            title="Add a text box (or press T)"
+          >
+            + Text
           </S.Button>,
         ]}
       />

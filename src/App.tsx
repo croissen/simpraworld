@@ -17,6 +17,7 @@ import PromptModal from './ui/PromptModal'
 import type { ComponentDef } from './types'
 import {
   addPhoto,
+  addText,
   copySelection,
   deleteComponent,
   deleteSelection,
@@ -24,6 +25,7 @@ import {
   getCamera,
   getComponents,
   getComponentsOpen,
+  getEditingTextPid,
   getEditOpen,
   getLibraryOpen,
   getNoteEditorId,
@@ -44,6 +46,7 @@ import {
   undo,
 } from './store'
 import { initCurrentFile, saveUniverse } from './currentFile'
+import TextEditor from './ui/TextEditor'
 import { fileToImage } from './image'
 import { GlobalStyle } from './global.styles'
 import * as S from './App.styles'
@@ -85,6 +88,14 @@ export default function App() {
       const tag = (el?.tagName || '').toLowerCase()
       if (tag === 'input' || tag === 'textarea' || el?.isContentEditable) return
       const ctrl = e.ctrlKey || e.metaKey
+
+      // 't' = 텍스트 개체 추가 후 바로 입력(화면 중앙)
+      if (!ctrl && (e.key === 't' || e.key === 'T')) {
+        e.preventDefault()
+        const c = getCamera()
+        addText(c.x, c.y)
+        return
+      }
 
       // Ctrl+Z 실행취소 / Ctrl+Y(또는 Ctrl+Shift+Z) 다시실행
       if (ctrl && (e.key === 'z' || e.key === 'Z')) {
@@ -176,6 +187,7 @@ export default function App() {
 
   const selCount = selectionCount()
   const noteId = getNoteEditorId()
+  const editTextPid = getEditingTextPid()
 
   return (
     <S.AppRoot>
@@ -212,6 +224,7 @@ export default function App() {
         <ViewPanel />
       )}
       {noteId && <NoteEditor nodeId={noteId} />}
+      {editTextPid && <TextEditor key={editTextPid} pid={editTextPid} />}
       <ContextMenu onRequestDelete={requestDelete} onCreateComponent={requestCreateComponent} />
       {delCount !== null &&
         (selectionHasShared() ? (

@@ -11,6 +11,7 @@ import {
   selectionCount,
   setCamera,
   setEditOpen,
+  startTextEdit,
 } from '../store'
 import * as S from './ObjectActions.styles'
 
@@ -88,6 +89,7 @@ export default function ObjectActions() {
     if (!pl || !n) return
     if (n.type === 'folder') enterFolder(n.id)
     else if (n.type === 'memo') openNote(n.id, pl.id)
+    else if (n.type === 'text') startTextEdit(pl.id) // 텍스트는 인라인 편집 시작
   }
 
   return (

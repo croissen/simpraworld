@@ -2,6 +2,7 @@ import { get, set } from 'idb-keyval'
 import { DEFAULT_BG, emptyDoc, uid } from './types'
 import type { Asset, ComponentDef, NodeType, Placement, SEdge, SimpraWorldDoc, SNode, SpaceItem } from './types'
 import { makeSampleWorld } from './sampleWorld'
+import { measureTextNode, wrappedHeight } from './textMeasure'
 
 export interface Camera {
   x: number // 화면 중앙에 오는 월드 좌표
@@ -518,6 +519,11 @@ export function itemsInCurrentSpace(): SpaceItem[] {
       assetId: n.assetId,
       textColor: n.textColor,
       emphasize: n.emphasize,
+      fontSize: n.fontSize,
+      bold: n.bold,
+      align: n.align,
+      valign: n.valign,
+      wrap: n.wrap,
       body: n.body,
       badge: n.badge,
       badgeSize: n.badgeSize,
@@ -586,15 +592,19 @@ export function selectAll() {
 
 // ── 노드 + 배치 CRUD ─────────────────────────────────────────
 export function addNode(type: NodeType, x: number, y: number): SNode {
+  const isText = type === 'text'
   const node: SNode = {
-    id: uid(type === 'folder' ? 'f' : 'm'),
+    id: uid(type === 'folder' ? 'f' : isText ? 't' : 'm'),
     type,
-    name: type === 'folder' ? 'New folder' : 'New note',
-    shape: type === 'folder' ? 'rect' : 'circle',
-    w: 68,
-    h: 68,
-    color: type === 'folder' ? '#5b8cff' : '#34c98a',
+    name: type === 'folder' ? 'New folder' : isText ? 'Text' : 'New note',
+    shape: isText ? 'rect' : type === 'folder' ? 'rect' : 'circle',
+    w: isText ? 40 : 68,
+    h: isText ? 30 : 68,
+    color: type === 'folder' ? '#5b8cff' : isText ? 'none' : '#34c98a',
     updatedAt: Date.now(),
+    ...(isText
+      ? { body: '', textColor: '#ffffff', fontSize: 20, align: 'left' as const, radius: 6 }
+      : {}),
   }
   doc.nodes.push(node)
   const space = getCurrentSpace()
@@ -611,7 +621,84 @@ export function updateNode(id: string, patch: Partial<SNode>) {
   const n = getNode(id)
   if (!n) return
   Object.assign(n, patch)
+  // 텍스트 개체: 박스가 내용(글자)보다 작아지지 않게 최소 크기 보장
+  if (n.type === 'text') {
+    if (n.wrap) {
+      // 고정 폭 줄바꿈: 폭은 유지(최소 40), 높이는 줄바꿈 결과 이상
+      if (n.w < 40) n.w = 40
+      const minH = wrappedHeight(n, n.w)
+      if (n.h < minH) n.h = minH
+    } else {
+      const m = measureTextNode(n)
+      if (n.w < m.w) n.w = m.w
+      if (n.h < m.h) n.h = m.h
+    }
+  }
   n.updatedAt = Date.now()
+  changed()
+}
+
+// ── 텍스트 개체 인라인 편집 ───────────────────────────────────
+let editingTextPid: string | null = null
+export const getEditingTextPid = () => editingTextPid
+
+/** + Text / 't' : 텍스트 개체 생성 후 바로 인라인 편집 시작. 반환=placement id. */
+export function addText(x: number, y: number): string {
+  const node = addNode('text', x, y) // 생성+선택, 반환=node
+  const pl = doc.placements.find((p) => p.nodeId === node.id)
+  editingTextPid = pl ? pl.id : null
+  changed()
+  return editingTextPid || ''
+}
+
+export function startTextEdit(pid: string) {
+  editingTextPid = pid
+  selection = new Set([pid])
+  changed()
+}
+
+/** 편집 중 입력에 따라 박스 크기/중심을 실시간 반영(캔버스만 다시 그림, 히스토리·저장은 커밋 때). */
+export function liveResizeText(pid: string, w: number, h: number, cx: number, cy: number) {
+  const pl = getPlacement(pid)
+  if (!pl) return
+  const n = getNode(pl.nodeId)
+  if (!n) return
+  n.w = Math.max(8, w)
+  n.h = Math.max(8, h)
+  pl.x = cx
+  pl.y = cy
+  markDirty()
+}
+
+/**
+ * 편집 종료(커밋). body 비면 노드/배치 삭제. w/h(월드)와 중심좌표(cx,cy)로 박스 맞춤.
+ */
+export function commitText(pid: string, body: string, w: number, h: number, cx: number, cy: number) {
+  editingTextPid = null
+  const pl = getPlacement(pid)
+  if (!pl) {
+    changed()
+    return
+  }
+  if (!body.trim()) {
+    const nodeId = pl.nodeId
+    doc.placements = doc.placements.filter((p) => p.id !== pid)
+    if (!doc.placements.some((p) => p.nodeId === nodeId))
+      doc.nodes = doc.nodes.filter((nn) => nn.id !== nodeId)
+    selection = new Set()
+    changed()
+    return
+  }
+  const n = getNode(pl.nodeId)
+  if (n) {
+    n.body = body
+    n.name = body.split('\n')[0].trim() || 'Text' // 라이브러리 라벨
+    n.w = Math.max(8, w)
+    n.h = Math.max(8, h)
+    n.updatedAt = Date.now()
+  }
+  pl.x = cx
+  pl.y = cy
   changed()
 }
 

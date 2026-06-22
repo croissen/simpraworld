@@ -6,7 +6,7 @@
 //  4) 소속+좌표는 노드에서 분리해 placements(관계 테이블)로 → 한 노드가 여러 공간에
 //     동시에 존재 가능(다대다 참조). node=데이터(원본 1개), placement=어디에 어떤 좌표로 놓였나.
 
-export type NodeType = 'folder' | 'memo' | 'photo' // photo = 순수 사진 개체(라벨·노트편집 없음)
+export type NodeType = 'folder' | 'memo' | 'photo' | 'text' // text = 캔버스 위 자유 텍스트(박스 안 글자)
 export type Shape = 'rect' | 'circle' | 'triangle' | 'hexagon' | 'image'
 
 /**
@@ -42,9 +42,14 @@ export interface SNode {
   radius?: number // 모서리 둥글기(월드 단위, 사각형·이미지에 적용)
   color: string
   assetId?: string // 이미지 아이콘
-  textColor?: string // 이름(라벨) 글자색. 없으면 기본 밝은색
+  textColor?: string // 이름(라벨) 글자색. 없으면 기본 밝은색. text 개체에선 글자색.
   emphasize?: boolean // 이름 라벨 강조(대비 테두리) → 어떤 배경에서도 잘 보이게
-  body?: string // 메모 본문(노트 더블클릭 팝업에서 편집)
+  fontSize?: number // text 개체 글자 크기(월드 단위, 기본 20)
+  bold?: boolean // text 개체 굵게
+  align?: 'left' | 'center' | 'right' // text 개체 가로 정렬(기본 left)
+  valign?: 'top' | 'middle' | 'bottom' // text 개체 세로 정렬(기본 top)
+  wrap?: boolean // text 개체: 고정 폭에서 자동 줄바꿈(기본 false=오른쪽 무한)
+  body?: string // 메모 본문 / text 개체 내용
   tags?: string[] // 해시태그(연관 메모 묶기·검색·교체용). '#' 없이 저장.
   badge?: string // 좌상단 배지(유통기한·능력치·직급 등 짧은 라벨). 비면 캔버스에 안 보임.
   badgeSize?: number // 배지 폰트 크기(월드 단위, 기본 14). 노드 크기와 무관 → 가림 비율 고정.
@@ -75,6 +80,11 @@ export interface SpaceItem {
   assetId?: string
   textColor?: string
   emphasize?: boolean
+  fontSize?: number
+  bold?: boolean
+  align?: 'left' | 'center' | 'right'
+  valign?: 'top' | 'middle' | 'bottom'
+  wrap?: boolean
   body?: string
   badge?: string
   badgeSize?: number
