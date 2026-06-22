@@ -622,6 +622,16 @@ export const TagBar = styled.div`
   gap: 6px;
 `
 
+/* 해시태그 드래그 중 들어갈 자리 표시(삽입 막대) */
+export const TagDrop = styled.span`
+  width: 3px;
+  align-self: stretch;
+  min-height: 22px;
+  border-radius: 2px;
+  background: #3ddc7f;
+  box-shadow: 0 0 0 2px #3ddc7f44;
+`
+
 export const Tag = styled.span`
   display: inline-flex;
   align-items: center;
@@ -678,8 +688,8 @@ export const CapTag = styled.span`
   border: 1px solid #c4d3f5;
   color: #2a3f6b;
   border-radius: 999px;
-  padding: 3px 10px;
-  font-size: 12px;
+  padding: 2px 8px;
+  font-size: 10.5px;
   white-space: nowrap; /* #호날도 가 중간에 안 잘리게 */
 `
 /* 캡처 시 본문: textarea 대신 div로 전체 내용 표시(길면 아래로 계속 이어짐) */

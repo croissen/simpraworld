@@ -18,6 +18,7 @@ import { toBlob } from 'html-to-image'
 import { fileToImage, pickImageFile } from '../image'
 import { useIsMobile } from '../useIsMobile'
 import ConfirmModal from './ConfirmModal'
+import TagRow from './TagRow'
 import * as S from './NoteEditor.styles'
 
 // 배지 편집 팝업: 내용(줄바꿈) / 폰트크기(직접 입력) / 글자색 / 배경색(+배경 없음).
@@ -136,9 +137,9 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
   const [viewPhoto, setViewPhoto] = useState(false) // 모바일 사진 크게보기
   const [shareOpen, setShareOpen] = useState(false) // 공유 팝업
   const [capturing, setCapturing] = useState(false) // 캡처 중(버튼 숨김)
+  const [shareMode, setShareMode] = useState<null | 'gallery' | 'clipboard'>(null)
   const thumbRef = useRef<HTMLDivElement>(null)
   const paperRef = useRef<HTMLDivElement>(null) // 실제 메모창(캡처 대상)
-  const shareBlobRef = useRef<Blob | null>(null) // 팝업 열릴 때 미리 캡처한 이미지
 
   // 다른 노트로 새로 열리면 미리보기/검색 초기화
   useEffect(() => {
@@ -174,6 +175,15 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
     setTagText('')
   }
   const removeTag = (t: string) => updateNode(n.id, { tags: (n.tags || []).filter((x) => x !== t) })
+
+  // 해시태그 칩(드래그 정렬은 TagRow가 처리)
+  const renderTags = () => (
+    <TagRow
+      tags={n.tags || []}
+      onReorder={(tags) => updateNode(n.id, { tags })}
+      onRemove={removeTag}
+    />
+  )
   // 교체 실행 + 검색란 비우기(스와이프로 교체했으면 검색어 초기화)
   const doSwap = () => {
     if (!slotPid) return
@@ -182,29 +192,6 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
   }
   // 노트 공유 팝업 열기
   const doShare = () => setShareOpen(true)
-
-  // 실제 메모창을 버튼만 숨겨(capturing) 그대로 PNG로 캡처
-  const captureBlob = async () => {
-    setCapturing(true)
-    // 두 프레임 대기 → 버튼 숨김 반영 후 캡처
-    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
-    try {
-      await (document as Document & { fonts?: { ready: Promise<unknown> } }).fonts?.ready
-    } catch {
-      /* 폰트 대기 실패 무시 */
-    }
-    let blob: Blob | null = null
-    try {
-      // cacheBust 금지: 사진 dataURL에 ?가 붙어 깨짐
-      if (paperRef.current)
-        blob = await toBlob(paperRef.current, { pixelRatio: 2, backgroundColor: '#f3f1ea' })
-    } catch (e) {
-      console.warn('capture failed', e)
-    } finally {
-      setCapturing(false)
-    }
-    return blob
-  }
 
   // 이미지 다운로드(폴백 공통)
   const downloadImage = (blob: Blob) => {
@@ -241,34 +228,58 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
     }
   }
 
-  // 팝업 열릴 때 미리 캡처(공유 시트는 사용자 제스처 내 호출 필요 → 미리 준비)
+  // 갤러리/클립보드: capturing(버튼 숨김+해시태그 위로) 모드를 켜고, 그 렌더가 "커밋된 뒤"에 캡처
+  const shareGallery = () => {
+    setShareOpen(false)
+    setShareMode('gallery')
+    setCapturing(true)
+  }
+  const shareClipboard = () => {
+    setShareOpen(false)
+    setShareMode('clipboard')
+    setCapturing(true)
+  }
+
+  // capturing 모드 렌더가 적용된 뒤(effect = 커밋 이후) 캡처 → 버튼 숨김/해시태그 이동이 항상 반영됨
   useEffect(() => {
-    if (!shareOpen) return
-    shareBlobRef.current = null
-    captureBlob().then((b) => (shareBlobRef.current = b))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shareOpen])
-
-  // 갤러리: 메모 화면을 이미지로 저장(다운로드)
-  const shareGallery = async () => {
-    setShareOpen(false)
-    const blob = shareBlobRef.current ?? (await captureBlob())
-    if (!blob) return
-    downloadImage(blob)
-  }
-
-  // 이미지를 클립보드에 복사(붙여넣기용). 공유 시트 안 띄움.
-  const shareClipboard = async () => {
-    const blob = shareBlobRef.current // 제스처 보존 위해 미리 캡처해둔 것 사용
-    setShareOpen(false)
-    if (!blob) return
-    try {
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
-      alert('Image copied to clipboard')
-    } catch {
-      alert('Could not copy image — clipboard image copy needs HTTPS')
+    if (!capturing || !shareMode) return
+    let cancelled = false
+    ;(async () => {
+      // 커밋 이후(effect) + 약간의 지연으로 레이아웃 확정 후 캡처(rAF 비의존)
+      await new Promise((r) => setTimeout(r, 60))
+      try {
+        await (document as Document & { fonts?: { ready: Promise<unknown> } }).fonts?.ready
+      } catch {
+        /* 무시 */
+      }
+      let blob: Blob | null = null
+      try {
+        if (paperRef.current)
+          blob = await toBlob(paperRef.current, { pixelRatio: 2, backgroundColor: '#f3f1ea' })
+      } catch (e) {
+        console.warn('capture failed', e)
+      }
+      if (cancelled) return
+      const mode = shareMode
+      setCapturing(false)
+      setShareMode(null)
+      if (!blob) return
+      if (mode === 'gallery') {
+        downloadImage(blob)
+      } else {
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+          alert('Image copied to clipboard')
+        } catch {
+          alert('Could not copy image — clipboard image copy needs HTTPS')
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
     }
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [capturing, shareMode])
 
   // 텍스트: 제목 / 내용 / 해시태그 형식으로 복사
   const shareText = async () => {
@@ -372,7 +383,8 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
         <S.SharePop onClick={() => setShareOpen(false)}>
           <S.ShareSheet onClick={(e) => e.stopPropagation()}>
             <S.ShareItem onClick={shareGallery}>🖼 Save image</S.ShareItem>
-            <S.ShareItem onClick={shareClipboard}>📋 Copy image</S.ShareItem>
+            {/* 모바일은 이미지 클립보드 복사가 안 돼서 제외 */}
+            {!isMobile && <S.ShareItem onClick={shareClipboard}>📋 Copy image</S.ShareItem>}
             <S.ShareItem onClick={shareText}>📝 Copy text</S.ShareItem>
           </S.ShareSheet>
         </S.SharePop>
@@ -408,14 +420,7 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
 
   const tagBar = (
     <S.TagBar>
-      {(n.tags || []).map((t) => (
-        <S.Tag key={t}>
-          #{t}
-          <button onClick={() => removeTag(t)} title="Remove">
-            ×
-          </button>
-        </S.Tag>
-      ))}
+      {renderTags()}
       <S.TagInput
         value={tagText}
         readOnly={locked}
@@ -673,14 +678,7 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
           />
           {capBody}
           <S.TagBar>
-            {(n.tags || []).map((t) => (
-              <S.Tag key={t}>
-                #{t}
-                <button onClick={() => removeTag(t)} title="Remove">
-                  ×
-                </button>
-              </S.Tag>
-            ))}
+            {renderTags()}
             <S.TagInput
               value={tagText}
               placeholder={n.tags?.length ? 'Add tag…' : 'Type #tag then Enter'}

@@ -1465,9 +1465,8 @@ export async function init() {
       if (!saved.components) saved.components = [] // 구버전엔 컴포넌트 배열 없음
       if (!saved.universeName) saved.universeName = 'My Universe' // 구버전엔 유니버스명 없음
       migrateEdgesToPlacements(saved) // 구버전: node 기반 엣지 → placement 기반
-      // 구버전: 이미지 메모(본문 없음) → 사진 개체로
-      for (const n of saved.nodes)
-        if (n.type === 'memo' && n.shape === 'image' && n.assetId && !n.body) n.type = 'photo'
+      // (제거됨) 예전엔 "이미지+본문없는 memo"를 photo로 바꿨는데, 매 로드마다 돌아
+      // 사진 넣은 일반 노트까지 사진으로 바꿔버리는 버그라 삭제. 노트는 노트 그대로 둠.
       doc = saved
     } else {
       doc = makeSampleWorld()
