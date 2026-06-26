@@ -1,11 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import { commitText, getCamera, getNode, getPlacement, liveResizeText, placementPos, setCamera } from '../store'
+import {
+  commitText,
+  getCamera,
+  getNode,
+  getPlacement,
+  liveResizeText,
+  liveSetTextBody,
+  placementPos,
+  setCamera,
+} from '../store'
 import { useIsMobile } from '../useIsMobile'
 
 // 캔버스 텍스트 개체 인라인 편집: 개체 위 textarea로 바로 입력.
-// - 박스는 시작 중심을 기준으로 좌우/상하 균등하게 커짐(글이 좌측정렬이어도 요소는 중앙 고정).
-// - 오른쪽으로 늘다가 화면 폭에 닿으면 자동 줄바꿈(wrap).
-// - Enter=줄바꿈, 다른 곳 클릭/Esc=완료. 위치는 매 프레임 카메라/캔버스에 맞춰 추적.
+// - 좌상단 고정(anchorLeft·anchorTop): 왼쪽·윗변을 고정 → 오른쪽·아래로만 자람.
+// - 글자/배경은 투명, 커서만 보임. 실제 글자는 캔버스가 그림(liveSetTextBody) → 편집/보기 위치 100% 동일.
+// - 오른쪽으로 늘다가 화면 폭에 닿으면 자동 줄바꿈(wrap). Enter=줄바꿈, 다른 곳 클릭/Esc=완료.
 export default function TextEditor({ pid }: { pid: string }) {
   const pl = getPlacement(pid)
   const n = pl ? getNode(pl.nodeId) : undefined
@@ -14,9 +23,14 @@ export default function TextEditor({ pid }: { pid: string }) {
   const committed = useRef(false)
   const [value, setValue] = useState(n?.body ?? '')
 
-  // 시작 중심(월드, 고정). 박스는 이 점을 중심으로 커짐.
+  // 시작 중심(월드). 가로 중심(c0.x)·모바일 카메라 기준으로 사용.
   const center = useRef<{ x: number; y: number } | null>(null)
   if (!center.current && pl) center.current = placementPos(pl)
+  // 좌상단 고정점(월드). 표시 중인 박스의 왼쪽·윗변(중심 ∓ 크기/2)에서 잡음 → 측정 타이밍과 무관(드리프트 방지).
+  const anchorTop = useRef<number | null>(null)
+  const anchorLeft = useRef<number | null>(null)
+  if (anchorTop.current == null && pl && n) anchorTop.current = placementPos(pl).y - n.h / 2
+  if (anchorLeft.current == null && pl && n) anchorLeft.current = placementPos(pl).x - n.w / 2
   const font = useRef({ bold: !!n?.bold, fontSize: n?.fontSize || 20 })
   const lockedW = useRef<number | null>(null)
   if (lockedW.current == null && n) lockedW.current = n.w
@@ -27,7 +41,6 @@ export default function TextEditor({ pid }: { pid: string }) {
     const ta = ref.current
     if (!ta) return
     const cam = getCamera()
-    const c0 = center.current
     const maxPx = Math.max(80, window.innerWidth - 48) // 화면 가용 폭
 
     if (n?.lock) {
@@ -58,7 +71,13 @@ export default function TextEditor({ pid }: { pid: string }) {
       ta.style.height = '0px'
       ta.style.height = ta.scrollHeight + 'px'
     }
-    if (c0) liveResizeText(pid, ta.offsetWidth / cam.zoom, ta.offsetHeight / cam.zoom, c0.x, c0.y)
+    if (anchorTop.current != null && anchorLeft.current != null) {
+      const wWorld = ta.offsetWidth / cam.zoom
+      const hWorld = ta.offsetHeight / cam.zoom
+      // 좌·상 고정 → 우·하로만 자람 (중심 = 고정점 + 크기/2)
+      liveResizeText(pid, wWorld, hWorld, anchorLeft.current + wWorld / 2, anchorTop.current + hWorld / 2)
+    }
+    liveSetTextBody(pid, ta.value, wrappedRef.current) // 캔버스가 현재 글자를 바로 그리게
   }
 
   useEffect(() => {
@@ -85,8 +104,8 @@ export default function TextEditor({ pid }: { pid: string }) {
         const r = canvas
           ? canvas.getBoundingClientRect()
           : ({ left: 0, top: 0, width: window.innerWidth, height: window.innerHeight } as DOMRect)
-        const cx = (c.x - cam.x) * cam.zoom + r.left + r.width / 2
         const cy = (c.y - cam.y) * cam.zoom + r.top + r.height / 2
+        const cx = (c.x - cam.x) * cam.zoom + r.left + r.width / 2
         const fs = font.current.fontSize * cam.zoom
         el.style.font = `${font.current.bold ? '700 ' : ''}${fs}px system-ui, sans-serif`
         el.style.lineHeight = '1.25'
@@ -95,9 +114,17 @@ export default function TextEditor({ pid }: { pid: string }) {
           lastZoom = cam.zoom
           resize() // 줌 바뀌면 글자 px 변하니 박스 재측정
         }
-        // 중심(c)에 박스 중앙을 맞춤 → 글 좌측정렬이어도 요소는 중앙 유지
-        el.style.left = `${cx - el.offsetWidth / 2}px`
-        el.style.top = `${cy - el.offsetHeight / 2}px`
+        // 좌상단(anchorLeft·anchorTop) 고정 → 박스 왼쪽·윗변이 그 화면좌표에 붙고 우·하로 자람
+        const at = anchorTop.current
+        const al = anchorLeft.current
+        el.style.left =
+          al != null
+            ? `${(al - cam.x) * cam.zoom + r.left + r.width / 2}px`
+            : `${cx - el.offsetWidth / 2}px`
+        el.style.top =
+          at != null
+            ? `${(at - cam.y) * cam.zoom + r.top + r.height / 2}px`
+            : `${cy - el.offsetHeight / 2}px`
       }
       raf = requestAnimationFrame(tick)
     }
@@ -115,7 +142,9 @@ export default function TextEditor({ pid }: { pid: string }) {
     const c0 = center.current!
     const w = ta ? ta.offsetWidth / cam.zoom : 40
     const h = ta ? ta.offsetHeight / cam.zoom : 24
-    commitText(pid, value, w, h, c0.x, c0.y, n?.lock ? undefined : wrappedRef.current)
+    const cx = anchorLeft.current != null ? anchorLeft.current + w / 2 : c0.x // 좌 고정 기준 최종 중심
+    const cy = anchorTop.current != null ? anchorTop.current + h / 2 : c0.y // 윗변 고정 기준
+    commitText(pid, value, w, h, cx, cy, n?.lock ? undefined : wrappedRef.current)
   }
 
   if (!pl || !n || !center.current) return null
@@ -149,12 +178,17 @@ export default function TextEditor({ pid }: { pid: string }) {
         outline: 'none',
         resize: 'none',
         overflow: 'hidden',
-        background: n.color === 'none' ? 'transparent' : n.color,
-        color: n.textColor || '#ffffff',
+        // 배경·글자 모두 투명: 실제 글자/배경은 캔버스가 그림. 여기선 커서만 보임 → 편집/보기 위치 동일.
+        background: 'transparent',
+        color: 'transparent',
+        // 초기 폰트/패딩(첫 측정도 정확하게 — 이후 tick이 줌 따라 갱신)
+        font: `${n.bold ? '700 ' : ''}${(n.fontSize || 20) * getCamera().zoom}px system-ui, sans-serif`,
+        lineHeight: 1.25,
+        padding: `${4 * getCamera().zoom}px`,
         textAlign: n.align || 'left',
         caretColor: n.textColor || '#ffffff',
         borderRadius: `${(n.radius || 0) * getCamera().zoom}px`,
-        boxShadow: '0 0 0 1px #3ddc7f',
+        boxShadow: '0 0 0 1.5px #3ddc7f', // 선택 시 캔버스 외곽선과 동일 → 편집/선택 이음매 없음
       }}
     />
   )

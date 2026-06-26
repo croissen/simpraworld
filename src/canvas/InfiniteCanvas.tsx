@@ -16,7 +16,6 @@ import {
   getBgColor,
   getCamera,
   getDoc,
-  getEditingTextPid,
   getGridBold,
   getNode,
   getShowGrid,
@@ -422,8 +421,8 @@ export default function InfiniteCanvas() {
       }
       ctx.restore()
 
-      // 텍스트 개체: 박스 안에 글자(body) 그림. 정렬(왼/중앙/오른쪽), 위에서부터. 편집 중이면 생략(오버레이가 그림).
-      if (n.type === 'text' && n.body && getEditingTextPid() !== n.pid) {
+      // 텍스트 개체: 박스 안에 글자(body) 그림. 편집 중에도 그림(편집 오버레이는 글자 투명 + 커서만) → 위치 100% 동일.
+      if (n.type === 'text' && n.body) {
         const fs = (n.fontSize || 20) * zoom
         if (fs >= 4) {
           const align = n.align || 'left'
@@ -436,6 +435,7 @@ export default function InfiniteCanvas() {
           const tx = align === 'center' ? x : align === 'right' ? x + hw - pad : x - hw + pad
           const lines = textLines(n, n.w) // wrap이면 고정폭 줄바꿈, 아니면 \n 분리
           const lineH = fs * 1.25
+          const lead = (lineH - fs) / 2 // HTML line-height 위쪽 여백 보정 → 편집칸과 글자 위치 일치
           const totalH = lines.length * lineH
           const valign = n.valign || 'top'
           let ly =
@@ -445,31 +445,32 @@ export default function InfiniteCanvas() {
                 ? y + hh - pad - totalH
                 : y - hh + pad
           for (const l of lines) {
-            fillRich(ctx, l, tx, ly, fs)
+            fillRich(ctx, l, tx, ly + lead, fs)
             ly += lineH
           }
           ctx.restore()
         }
       }
 
-      // 선택/공유 링: yellow=일반 선택, purple=유니크(공유) 선택, sibling=결속 형제(점선, 표시만)
+      // 선택/공유 링: green=일반 선택, purple=유니크(공유) 선택, sibling=결속 형제(점선, 표시만)
       if (ring) {
+        const isText = n.type === 'text'
         if (ring === 'sibling') {
           ctx.strokeStyle = '#a78bfa'
-          ctx.lineWidth = 2
+          ctx.lineWidth = isText ? 1.5 : 2
           ctx.setLineDash([6, 4])
         } else {
-          ctx.strokeStyle = ring === 'purple' ? '#a78bfa' : '#ffd166'
-          ctx.lineWidth = 2.5
+          ctx.strokeStyle = ring === 'purple' ? '#a78bfa' : '#3ddc7f' // 일반 선택 = 초록
+          ctx.lineWidth = isText ? 1.5 : 2.5 // 텍스트는 입력칸처럼 얇게(고정 px)
           ctx.setLineDash([])
         }
-        const pad = 6
-        if (n.type === 'text') {
-          // 텍스트 = 네모(둥근 사각형) 테두리
-          const rr = Math.min(10, hw + pad, hh + pad)
-          roundRectPath(x - hw - pad, y - hh - pad, (hw + pad) * 2, (hh + pad) * 2, rr)
+        if (isText) {
+          // 텍스트 = 입력칸과 동일하게 박스에 딱 맞는 외곽선(패딩 없이)
+          const rr = Math.min((n.radius || 0) * zoom, hw, hh)
+          roundRectPath(x - hw, y - hh, hw * 2, hh * 2, rr)
         } else {
           // 그 외 개체 = 동그라미(타원) 테두리
+          const pad = 6
           ctx.beginPath()
           ctx.ellipse(x, y, hw + pad, hh + pad, 0, 0, Math.PI * 2)
         }

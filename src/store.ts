@@ -861,6 +861,16 @@ export function liveResizeText(pid: string, w: number, h: number, cx: number, cy
   markDirty()
 }
 
+/** 편집 중 본문/줄바꿈을 실시간 반영(히스토리·저장 없이) → 캔버스가 현재 글자를 바로 그림. */
+export function liveSetTextBody(pid: string, body: string, wrap: boolean) {
+  const pl = getPlacement(pid)
+  const n = pl && getNode(pl.nodeId)
+  if (!n) return
+  n.body = body
+  if (!n.lock) n.wrap = wrap
+  markDirty()
+}
+
 /**
  * 편집 종료(커밋). body 비면 노드/배치 삭제. w/h(월드)와 중심좌표(cx,cy)로 박스 맞춤.
  */
