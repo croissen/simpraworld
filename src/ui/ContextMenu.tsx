@@ -8,12 +8,10 @@ import {
   duplicateSelectionBound,
   getContextMenu,
   getNode,
-  getPlacement,
   hasClipboard,
   pasteClipboardAt,
   reorderPlacement,
   selectionCount,
-  setPlacementDevice,
   storePlacement,
   uniqueCopySelection,
 } from '../store'
@@ -65,14 +63,13 @@ export default function ContextMenu({
   if (!cm) return null
 
   const node = cm.nodeId ? getNode(cm.nodeId) : undefined
-  const dev = cm.pid ? getPlacement(cm.pid)?.device : undefined // 현재 배치의 기기 표시 상태
   const run = (fn: () => void) => () => {
     fn()
     closeContextMenu()
   }
 
   // 보일 항목 수로 대략적 높이 추정 → 화면 밖으로 안 나가게 클램프 (Paste here는 항상 표시)
-  const rows = (node ? 12 : 0) + 1
+  const rows = (node ? 8 : 0) + 1
   const left = Math.min(cm.x, window.innerWidth - 200)
   const top = Math.min(cm.y, window.innerHeight - (rows * 34 + 24))
 
@@ -108,31 +105,10 @@ export default function ContextMenu({
             </S.Item>
             <S.Item
               onClick={run(() => cm.pid && storePlacement(cm.pid))}
-              title="Hide from canvas and keep in the library (current folder)"
+              title="Hide from canvas in this universe — keep in library (PC/Mobile independent)"
             >
-              Store in library
+              {selectionCount() > 1 ? `Store in library (${selectionCount()})` : 'Store in library'}
             </S.Item>
-
-            <S.Sep />
-            <S.Item
-              onClick={run(() => setPlacementDevice(cm.pid, undefined))}
-              title="Show in both the PC and Mobile universe"
-            >
-              {!dev ? '✓ ' : ''}Show on PC + Mobile
-            </S.Item>
-            <S.Item
-              onClick={run(() => setPlacementDevice(cm.pid, 'pc'))}
-              title="Show only in the PC universe (hidden on mobile)"
-            >
-              {dev === 'pc' ? '✓ ' : ''}Show on PC only
-            </S.Item>
-            <S.Item
-              onClick={run(() => setPlacementDevice(cm.pid, 'mobile'))}
-              title="Show only in the Mobile universe (hidden on PC)"
-            >
-              {dev === 'mobile' ? '✓ ' : ''}Show on Mobile only
-            </S.Item>
-            <S.Sep />
             <S.Item onClick={run(onCreateComponent)}>
               {selectionCount() > 1 ? `Create component (${selectionCount()})` : 'Create component'}
             </S.Item>

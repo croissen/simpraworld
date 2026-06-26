@@ -232,42 +232,84 @@ export function getFrame(space: string | null, target: FrameTarget): Frame | und
 /** 캔버스 점선 미리보기용: 현재 공간 × 현재 선택 타깃. */
 export const getCurrentFrame = (): Frame | undefined => getFrame(getCurrentSpace(), frameTarget)
 
-/** 지금 보이는 화면 영역을 현재 공간 × 선택 타깃의 프레임으로 저장(덮어쓰기). */
-export function captureFrame() {
-  const f: Frame = {
-    cx: camera.x,
-    cy: camera.y,
-    w: viewport.w / camera.zoom,
-    h: viewport.h / camera.zoom,
-  }
-  const space = getCurrentSpace()
+/** 공간 × 타깃 슬롯에 프레임 기록. */
+function writeFrame(space: string | null, target: FrameTarget, f: Frame) {
   if (space === null) {
-    if (frameTarget === 'mobile') doc.rootFrameMobile = f
+    if (target === 'mobile') doc.rootFrameMobile = f
     else doc.rootFramePC = f
   } else {
     const n = getNode(space)
     if (!n) return
-    if (frameTarget === 'mobile') n.frameMobile = f
+    if (target === 'mobile') n.frameMobile = f
     else n.framePC = f
     n.updatedAt = Date.now()
   }
+}
+
+/** 같은 우주의 다른 공간들 프레임 크기 평균(없으면 null) — 새 프레임 기본값용. */
+function averageFrameSize(target: FrameTarget, exclude: string | null): { w: number; h: number } | null {
+  const fs: Frame[] = []
+  if (exclude !== null) {
+    const rf = target === 'mobile' ? doc.rootFrameMobile : doc.rootFramePC // 루트 제외 안 됐으면 포함
+    if (rf) fs.push(rf)
+  }
+  for (const n of doc.nodes) {
+    if (n.id === exclude) continue
+    const f = target === 'mobile' ? n.frameMobile : n.framePC
+    if (f) fs.push(f)
+  }
+  if (!fs.length) return null
+  return {
+    w: fs.reduce((s, f) => s + f.w, 0) / fs.length,
+    h: fs.reduce((s, f) => s + f.h, 0) / fs.length,
+  }
+}
+
+/**
+ * 현재 공간 × 활성 우주의 프레임을 저장.
+ * - 첫 세팅이고 같은 우주의 다른 공간 프레임이 있으면 → 그 평균 크기를 현재 위치에 적용(폴더 간 일관).
+ * - 그 외(없음/덮어쓰기) → 지금 보이는 화면 그대로.
+ * 저장 후 그 프레임으로 화면을 다시 맞춰 결과를 바로 보여준다.
+ */
+export function captureFrame() {
+  const space = getCurrentSpace()
+  const existing = getFrame(space, frameTarget)
+  const avg = existing ? null : averageFrameSize(frameTarget, space)
+  const f: Frame = avg
+    ? { cx: camera.x, cy: camera.y, w: avg.w, h: avg.h }
+    : { cx: camera.x, cy: camera.y, w: viewport.w / camera.zoom, h: viewport.h / camera.zoom }
+  writeFrame(space, frameTarget, f)
+  camera = fitCameraToFrame(f)
   changed()
 }
 
-/** 현재 공간 × 선택 타깃의 프레임 삭제. */
-export function clearFrame() {
+/** 현재 프레임이 현재 화면에서 만드는 줌(%). */
+export function frameZoomPct(f: Frame): number {
+  return Math.round(Math.min(viewport.w / f.w, viewport.h / f.h) * 100)
+}
+
+/** 프레임 W/H 직접 수정(중심 유지) → 다시 fit. */
+export function setCurrentFrameSize(w: number, h: number) {
   const space = getCurrentSpace()
-  if (space === null) {
-    if (frameTarget === 'mobile') delete doc.rootFrameMobile
-    else delete doc.rootFramePC
-  } else {
-    const n = getNode(space)
-    if (n) {
-      if (frameTarget === 'mobile') delete n.frameMobile
-      else delete n.framePC
-      n.updatedAt = Date.now()
-    }
-  }
+  const f = getFrame(space, frameTarget)
+  if (!f) return
+  const nf: Frame = { cx: f.cx, cy: f.cy, w: Math.max(1, w), h: Math.max(1, h) }
+  writeFrame(space, frameTarget, nf)
+  camera = fitCameraToFrame(nf)
+  changed()
+}
+
+/** 프레임 줌(%) 직접 수정 → W/H를 비율 유지로 스케일해 그 줌이 나오게. */
+export function setCurrentFrameZoom(pct: number) {
+  const space = getCurrentSpace()
+  const f = getFrame(space, frameTarget)
+  if (!f) return
+  const z = Math.max(1, pct) / 100
+  const cur = Math.min(viewport.w / f.w, viewport.h / f.h)
+  const k = cur / z // 줌을 z로 만들려면 영역을 이만큼 키움/줄임
+  const nf: Frame = { cx: f.cx, cy: f.cy, w: f.w * k, h: f.h * k }
+  writeFrame(space, frameTarget, nf)
+  camera = fitCameraToFrame(nf)
   changed()
 }
 
@@ -559,6 +601,16 @@ function writePos(p: Placement, x: number, y: number) {
     p.y = y
   }
 }
+
+// 보관(라이브러리에 넣음) 여부도 우주별. Mobile은 storedM 없으면 stored(PC)로 폴백.
+export function isStored(p: Placement): boolean {
+  if (frameTarget === 'mobile' && p.storedM !== undefined) return p.storedM
+  return !!p.stored
+}
+function writeStored(p: Placement, v: boolean) {
+  if (frameTarget === 'mobile') p.storedM = v
+  else p.stored = v
+}
 export function getSelectedNode(): SNode | undefined {
   const pid = getSoleSelectedPid()
   const p = pid ? getPlacement(pid) : undefined
@@ -569,25 +621,10 @@ export function getAsset(id: string | undefined): Asset | undefined {
   return doc.assets.find((a) => a.id === id)
 }
 
-/** 현재 공간의 배치들 (보관 stored / 다른 우주 전용 device는 캔버스에 안 보이므로 제외) */
+/** 현재 공간의 배치들 (활성 우주에서 보관된 건 캔버스에 안 보이므로 제외) */
 export function placementsInCurrentSpace(): Placement[] {
   const space = getCurrentSpace()
-  return doc.placements.filter(
-    (p) => p.space === space && !p.stored && (!p.device || p.device === frameTarget),
-  )
-}
-
-/** 선택된 배치들의 기기 표시 설정. device=undefined → 양쪽 다(필드 제거). */
-export function setPlacementDevice(pid: string | null, device: FrameTarget | undefined) {
-  const pids = selection.size ? [...selection] : pid ? [pid] : []
-  if (!pids.length) return
-  for (const id of pids) {
-    const p = getPlacement(id)
-    if (!p) continue
-    if (device) p.device = device
-    else delete p.device
-  }
-  changed()
+  return doc.placements.filter((p) => p.space === space && !isStored(p))
 }
 
 /** 특정 공간의 모든 배치(보관 포함) — 보관함 트리용 */
@@ -608,9 +645,8 @@ export function useFromLibrary(nodeId: string) {
   if (space !== null && isCyclic(nodeId, space)) return // 폴더 순환 방지
   const existing = doc.placements.find((p) => p.nodeId === nodeId && p.space === space)
   if (existing) {
-    existing.stored = false
-    existing.x = camera.x
-    existing.y = camera.y
+    writeStored(existing, false) // 활성 우주에서만 노출로 전환
+    writePos(existing, camera.x, camera.y)
     selection = new Set([existing.id])
   } else {
     const pl: Placement = { id: uid('p'), nodeId, space, x: camera.x, y: camera.y }
@@ -620,12 +656,14 @@ export function useFromLibrary(nodeId: string) {
   changed()
 }
 
-/** 캔버스 개체를 보관함으로 보내기(숨김). 이 배치만 stored 처리 → 캔버스에서 사라지고 보관함/검색에만. */
+/** 캔버스 개체를 보관함으로 보내기(숨김) — 활성 우주에서만. 다중선택이면 선택 전체. */
 export function storePlacement(pid: string) {
-  const p = getPlacement(pid)
-  if (!p) return
-  p.stored = true
-  selection.delete(pid)
+  const pids = selection.size ? [...selection] : [pid] // 선택 있으면 전부, 없으면 대상 하나
+  for (const id of pids) {
+    const p = getPlacement(id)
+    if (p) writeStored(p, true)
+  }
+  selection = new Set()
   changed()
 }
 

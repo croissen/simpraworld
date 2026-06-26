@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import {
   bumpUI,
   captureFrame,
-  clearFrame,
   defaultZoom,
+  frameZoomPct,
   getBgColor,
   getCamera,
   getCurrentFrame,
@@ -16,12 +16,16 @@ import {
   resetBgColor,
   setBgColor,
   setCamera,
+  setCurrentFrameSize,
+  setCurrentFrameZoom,
   setFrameTarget,
   setGridBold,
   setShowFrame,
   setShowGrid,
 } from '../store'
 import ColorPicker from './ColorPicker'
+import CommitInput from './CommitInput'
+import ConfirmModal from './ConfirmModal'
 import * as S from './ViewPanel.styles'
 
 // 아무것도 선택 안 됐을 때 우상단 좌표 위젯.
@@ -30,18 +34,21 @@ export default function ViewPanel() {
   const [open, setOpen] = useState(false)
   const [xv, setXv] = useState('0')
   const [yv, setYv] = useState('0')
+  const [dimsOpen, setDimsOpen] = useState(false) // 프레임 W/H/줌 편집기 열림
+  const [confirmChange, setConfirmChange] = useState(false) // 기존 프레임 덮어쓰기 확인
   const c = getCamera()
   const wrapRef = useRef<HTMLDivElement>(null)
 
-  // 다른 곳(캔버스 등) 클릭하면 좌표 패널 닫기(취소)
+  // 다른 곳(캔버스 등) 클릭하면 좌표 패널 닫기(취소). 단, 확인 모달이 떠 있으면 유지(모달은 포털이라 밖).
   useEffect(() => {
     if (!open) return
     const h = (e: PointerEvent) => {
+      if (confirmChange) return
       if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
     }
     window.addEventListener('pointerdown', h)
     return () => window.removeEventListener('pointerdown', h)
-  }, [open])
+  }, [open, confirmChange])
 
   const openEdit = () => {
     setXv(String(Math.round(c.x)))
@@ -66,9 +73,13 @@ export default function ViewPanel() {
   }
   const target = getFrameTarget()
   const space = getCurrentSpace()
-  const hasFrame = !!getCurrentFrame() // 선택 타깃 기준
+  const frame = getCurrentFrame() // 선택 타깃 기준
+  const hasFrame = !!frame
   const hasPC = !!getFrame(space, 'pc')
   const hasMobile = !!getFrame(space, 'mobile')
+  const targetLabel = target === 'pc' ? 'PC' : 'Mobile'
+  // Set Frame: 최초면 바로, 기존에 있으면 실수 방지로 "Change?" 확인.
+  const onSetFrame = () => (hasFrame ? setConfirmChange(true) : capture())
 
   if (!open) {
     return (
@@ -174,18 +185,73 @@ export default function ViewPanel() {
         </S.Row>
         <S.Row>
           <S.Go
-            title={`Save this view as the ${target === 'pc' ? 'PC' : 'Mobile'} frame — auto-fits on entry`}
-            onClick={capture}
+            title={
+              hasFrame
+                ? `Change the ${targetLabel} frame (asks first)`
+                : `Save this view as the ${targetLabel} frame — auto-fits on entry`
+            }
+            onClick={onSetFrame}
           >
-            Set {target === 'pc' ? 'PC' : 'Mobile'} Frame
+            {hasFrame ? 'Change' : 'Set'} {targetLabel} Frame
           </S.Go>
-          {hasFrame && (
-            <S.Reset title="Clear this frame" onClick={clearFrame}>
-              ⟲
-            </S.Reset>
-          )}
+          <S.Reset
+            title={hasFrame ? 'Edit frame size / zoom' : 'No frame yet'}
+            disabled={!hasFrame}
+            style={{ width: 52, opacity: hasFrame ? 1 : 0.35 }}
+            onClick={() => hasFrame && setDimsOpen((v) => !v)}
+          >
+            {hasFrame && frame ? `${frameZoomPct(frame)}%` : '—'}
+          </S.Reset>
         </S.Row>
+
+        {dimsOpen && frame && (
+          <>
+            <S.Row>
+              <S.Box>
+                <span>W</span>
+                <CommitInput
+                  numeric
+                  type="number"
+                  value={Math.round(frame.w)}
+                  onCommit={(v) => setCurrentFrameSize(Number(v), frame.h)}
+                />
+              </S.Box>
+              <S.Box>
+                <span>H</span>
+                <CommitInput
+                  numeric
+                  type="number"
+                  value={Math.round(frame.h)}
+                  onCommit={(v) => setCurrentFrameSize(frame.w, Number(v))}
+                />
+              </S.Box>
+            </S.Row>
+            <S.Row>
+              <S.Box>
+                <span>Zoom %</span>
+                <CommitInput
+                  numeric
+                  type="number"
+                  value={frameZoomPct(frame)}
+                  onCommit={(v) => setCurrentFrameZoom(Number(v))}
+                />
+              </S.Box>
+            </S.Row>
+          </>
+        )}
       </S.Card>
+
+      {confirmChange && (
+        <ConfirmModal
+          message={`Change the ${targetLabel} frame to the current view?`}
+          confirmLabel="Change"
+          onConfirm={() => {
+            capture()
+            setConfirmChange(false)
+          }}
+          onCancel={() => setConfirmChange(false)}
+        />
+      )}
     </S.Wrap>
   )
 }

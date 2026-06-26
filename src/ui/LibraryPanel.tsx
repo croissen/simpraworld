@@ -3,6 +3,7 @@ import {
   breadcrumb,
   getCurrentSpace,
   getNode,
+  isStored,
   openNote,
   placementsInSpaceAll,
   searchLibrary,
@@ -33,11 +34,12 @@ export default function LibraryPanel() {
       if (!node) return null
       const isFolder = node.type === 'folder'
       const open = expanded.has(p.nodeId)
+      const stored = isStored(p) // 활성 우주 기준 보관 여부
       return (
         <Fragment key={p.id}>
           <S.Row
             $depth={depth}
-            $stored={!!p.stored}
+            $stored={stored}
             $current={isFolder && p.nodeId === currentSpace}
             onClick={() => isMobile && isFolder && toggle(p.nodeId)} // 모바일: 한 번 터치로 폴더 열고닫기
             onDoubleClick={() => (isFolder ? toggle(p.nodeId) : openNote(node.id))}
@@ -52,7 +54,7 @@ export default function LibraryPanel() {
             )}
             <S.Icon>{isFolder ? '📁' : node.type === 'photo' ? '🖼' : node.type === 'text' ? 'T' : '📝'}</S.Icon>
             <S.Name title={node.name}>{node.name || 'Untitled'}</S.Name>
-            {p.stored ? (
+            {stored ? (
               <S.Badge title="Stored only (not on canvas)">📦</S.Badge>
             ) : (
               <S.Badge $exposed title="On canvas">
