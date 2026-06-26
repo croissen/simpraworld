@@ -99,6 +99,13 @@ export default function TextEditor({ pid }: { pid: string }) {
       const el = ref.current
       const c = center.current
       if (el && c) {
+        // 모바일: 박스를 화면 가로 중앙에 유지(좌측 고정으로 자라도 좁은 화면 밖으로 안 벗어나게). 세로는 그대로.
+        const al0 = anchorLeft.current
+        if (isMobile && al0 != null) {
+          const pre = getCamera()
+          const boxCenterX = al0 + el.offsetWidth / pre.zoom / 2
+          if (Math.abs(pre.x - boxCenterX) > 0.1) setCamera({ x: boxCenterX, y: pre.y, zoom: pre.zoom })
+        }
         const cam = getCamera()
         const canvas = document.querySelector('canvas')
         const r = canvas

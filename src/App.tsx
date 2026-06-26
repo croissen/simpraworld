@@ -214,9 +214,10 @@ export default function App() {
       {selCount > 0 ? (
         <>
           {/* 모바일은 개체의 액션 버튼을 눌러야(editOpen) 편집 패널이 뜸. PC는 선택 즉시. */}
+          {/* 텍스트 입력 중엔 플로팅 액션바(⚙·✎·→)를 숨김 — 카메라 따라 덜그럭거려서 정신없음 */}
           {!isMobile || getEditOpen() ? (
             <Inspector onRequestDelete={requestDelete} onCreateComponent={requestCreateComponent} />
-          ) : (
+          ) : editTextPid ? null : (
             <ObjectActions />
           )}
           {/* 모바일: 개체 선택 중에도 우상단 좌표바 유지 */}
