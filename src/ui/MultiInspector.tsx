@@ -2,6 +2,7 @@ import {
   copySelection,
   getPlacement,
   getSelection,
+  placementPos,
   removeEdgesAmongSelection,
   reorderPlacement,
   selectionCount,
@@ -33,12 +34,15 @@ export default function MultiInspector({
   const edgesBold = internalEdges.length > 0 && internalEdges.every((e) => e.bold)
   const edgeColor = internalEdges.find((e) => e.color)?.color || '#96aad2'
 
-  // 그룹 기준점 = 좌상단(min x, min y). 편집하면 전체를 델타만큼 이동.
-  const minX = Math.round(Math.min(...pls.map((p) => p.x)))
-  const minY = Math.round(Math.min(...pls.map((p) => p.y)))
+  // 그룹 기준점 = 좌상단(min x, min y). 편집하면 전체를 델타만큼 이동. (현재 기기 좌표 기준)
+  const minX = Math.round(Math.min(...pls.map((p) => placementPos(p).x)))
+  const minY = Math.round(Math.min(...pls.map((p) => placementPos(p).y)))
 
   const moveBy = (dx: number, dy: number) => {
-    for (const p of pls) setPlacementXY(p.id, p.x + dx, p.y + dy)
+    for (const p of pls) {
+      const pos = placementPos(p)
+      setPlacementXY(p.id, pos.x + dx, pos.y + dy)
+    }
   }
 
   const lockedAll = pls.every((p) => p.locked)

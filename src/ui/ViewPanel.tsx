@@ -1,15 +1,24 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   bumpUI,
+  captureFrame,
+  clearFrame,
   defaultZoom,
   getBgColor,
   getCamera,
+  getCurrentFrame,
+  getCurrentSpace,
+  getFrame,
+  getFrameTarget,
   getGridBold,
+  getShowFrame,
   getShowGrid,
   resetBgColor,
   setBgColor,
   setCamera,
+  setFrameTarget,
   setGridBold,
+  setShowFrame,
   setShowGrid,
 } from '../store'
 import ColorPicker from './ColorPicker'
@@ -50,6 +59,16 @@ export default function ViewPanel() {
     setXv('0')
     setYv('0')
   }
+  // 지금 보이는 화면을 이 공간의 프레임으로 저장 → 점선 테두리도 바로 켜서 확인시켜줌.
+  const capture = () => {
+    captureFrame()
+    if (!getShowFrame()) setShowFrame(true)
+  }
+  const target = getFrameTarget()
+  const space = getCurrentSpace()
+  const hasFrame = !!getCurrentFrame() // 선택 타깃 기준
+  const hasPC = !!getFrame(space, 'pc')
+  const hasMobile = !!getFrame(space, 'mobile')
 
   if (!open) {
     return (
@@ -120,6 +139,51 @@ export default function ViewPanel() {
           >
             Bold
           </S.Toggle>
+        </S.Row>
+
+        <S.Sep />
+
+        <S.Row>
+          <S.Label style={{ flex: 1 }}>Frame</S.Label>
+          <S.Toggle
+            $on={getShowFrame()}
+            disabled={!hasFrame}
+            title="Show the selected frame outline"
+            onClick={() => setShowFrame(!getShowFrame())}
+          >
+            {getShowFrame() ? 'On' : 'Off'}
+          </S.Toggle>
+        </S.Row>
+        <S.Row>
+          <S.Toggle
+            style={{ flex: 1 }}
+            $on={target === 'pc'}
+            title="Edit the PC frame for this space"
+            onClick={() => setFrameTarget('pc')}
+          >
+            PC{hasPC ? ' •' : ''}
+          </S.Toggle>
+          <S.Toggle
+            style={{ flex: 1 }}
+            $on={target === 'mobile'}
+            title="Edit the Mobile frame for this space"
+            onClick={() => setFrameTarget('mobile')}
+          >
+            Mobile{hasMobile ? ' •' : ''}
+          </S.Toggle>
+        </S.Row>
+        <S.Row>
+          <S.Go
+            title={`Save this view as the ${target === 'pc' ? 'PC' : 'Mobile'} frame — auto-fits on entry`}
+            onClick={capture}
+          >
+            Set {target === 'pc' ? 'PC' : 'Mobile'} Frame
+          </S.Go>
+          {hasFrame && (
+            <S.Reset title="Clear this frame" onClick={clearFrame}>
+              ⟲
+            </S.Reset>
+          )}
         </S.Row>
       </S.Card>
     </S.Wrap>

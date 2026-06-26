@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { SEdge, SpaceItem } from '../types'
 import { measureTextNode, textLines, wrappedHeight } from '../textMeasure'
+import { fillRich, measureRich } from './emoji'
 import * as S from './InfiniteCanvas.styles'
 import {
   bumpUI,
@@ -19,6 +20,11 @@ import {
   getGridBold,
   getNode,
   getShowGrid,
+  getShowFrame,
+  getCurrentFrame,
+  placementPos,
+  applyEntryFrame,
+  setViewport,
   startTextEdit,
   getPlacement,
   getSelectionSet,
@@ -116,10 +122,16 @@ export default function InfiniteCanvas() {
       }
     }
 
+    let firstLayout = true
     function resize() {
       dpr = Math.min(window.devicePixelRatio || 1, 2)
       canvas.width = Math.round(canvas.clientWidth * dpr)
       canvas.height = Math.round(canvas.clientHeight * dpr)
+      setViewport(canvas.clientWidth, canvas.clientHeight) // 프레임 캡처/적용용 화면 크기
+      if (firstLayout) {
+        firstLayout = false
+        applyEntryFrame() // 최초 레이아웃 확정 후 정밀 크기로 활성 우주 프레임에 fit
+      }
       markDirty()
     }
     resize()
@@ -129,12 +141,14 @@ export default function InfiniteCanvas() {
     function draw() {
       const W = canvas.clientWidth
       const H = canvas.clientHeight
+      setViewport(W, H) // 프레임 캡처/적용이 항상 현재 화면 크기를 쓰게(레이아웃 지연 대비)
       const c = getCamera()
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       // 배경
       ctx.fillStyle = getBgColor()
       ctx.fillRect(0, 0, W, H)
       if (getShowGrid()) drawGrid(W, H)
+      if (getShowFrame()) drawFrame()
 
       const items = itemsInCurrentSpace()
       // 엣지는 배치(placement) 단위. 각 배치는 고유 pid → 같은 노드 복사본끼리도 참조선이 따로.
@@ -350,6 +364,20 @@ export default function InfiniteCanvas() {
       ctx.stroke()
     }
 
+    // 현재 공간의 프레임(저장된 기준 영역) 점선 테두리.
+    function drawFrame() {
+      const f = getCurrentFrame()
+      if (!f) return
+      const a = w2s(f.cx - f.w / 2, f.cy - f.h / 2) // 좌상단
+      const b = w2s(f.cx + f.w / 2, f.cy + f.h / 2) // 우하단
+      ctx.save()
+      ctx.strokeStyle = 'rgba(120,170,255,0.7)'
+      ctx.lineWidth = 1.5
+      ctx.setLineDash([8, 6])
+      ctx.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y)
+      ctx.restore()
+    }
+
     function drawNode(
       n: SpaceItem,
       x: number,
@@ -417,7 +445,7 @@ export default function InfiniteCanvas() {
                 ? y + hh - pad - totalH
                 : y - hh + pad
           for (const l of lines) {
-            ctx.fillText(l, tx, ly)
+            fillRich(ctx, l, tx, ly, fs)
             ly += lineH
           }
           ctx.restore()
@@ -461,7 +489,7 @@ export default function InfiniteCanvas() {
           const padY = fs * 0.28
           const lineH = fs * 1.18
           let maxW = 0
-          for (const l of lines) maxW = Math.max(maxW, ctx.measureText(l).width)
+          for (const l of lines) maxW = Math.max(maxW, measureRich(ctx, l, fs))
           const bw = maxW + padX * 2
           const bh = (lines.length - 1) * lineH + fs + padY * 2
           const bx = x - hw + 2
@@ -481,8 +509,8 @@ export default function InfiniteCanvas() {
           ctx.fillStyle = txtColor
           let ly = by + padY
           for (const l of lines) {
-            ctx.fillText(l, bx + padX, ly)
-            if (n.emphasize) ctx.fillText(l, bx + padX, ly) // 한 번 더 → 그림자 또렷
+            fillRich(ctx, l, bx + padX, ly, fs)
+            if (n.emphasize) fillRich(ctx, l, bx + padX, ly, fs) // 한 번 더 → 그림자 또렷
             ly += lineH
           }
           ctx.restore()
@@ -504,11 +532,11 @@ export default function InfiniteCanvas() {
           ctx.shadowColor = isLightColor(n.textColor || '#e8ecf3') ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.9)'
           ctx.shadowBlur = Math.max(2, fontPx * 0.3)
           ctx.shadowOffsetY = Math.max(0.5, fontPx * 0.05)
-          ctx.fillText(n.name, tx, ty)
-          ctx.fillText(n.name, tx, ty) // 한 번 더 → 그림자 또렷
+          fillRich(ctx, n.name, tx, ty, fontPx)
+          fillRich(ctx, n.name, tx, ty, fontPx) // 한 번 더 → 그림자 또렷
           ctx.restore()
         } else {
-          ctx.fillText(n.name, tx, ty)
+          fillRich(ctx, n.name, tx, ty, fontPx)
         }
       }
     }
@@ -869,7 +897,9 @@ export default function InfiniteCanvas() {
           dragGroup = [...set]
             .map((pid) => {
               const pl = getPlacement(pid)
-              return pl ? { pid, x0: pl.x, y0: pl.y } : null
+              if (!pl) return null
+              const pos = placementPos(pl) // 현재 기기 좌표에서 출발
+              return { pid, x0: pos.x, y0: pos.y }
             })
             .filter((g): g is { pid: string; x0: number; y0: number } => !!g)
         }

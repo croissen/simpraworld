@@ -48,7 +48,7 @@ export const CloseX = styled.button`
   }
 `
 
-export const Search = styled.input`
+export const Search = styled.input.attrs({ spellCheck: false })`
   flex: none;
   width: 100%;
   background: #0f1320;

@@ -1,6 +1,6 @@
 import { get, set } from 'idb-keyval'
 import { DEFAULT_BG, emptyDoc, uid } from './types'
-import type { Asset, ComponentDef, NodeType, Placement, SEdge, SimpraWorldDoc, SNode, SpaceItem } from './types'
+import type { Asset, ComponentDef, Frame, NodeType, Placement, SEdge, SimpraWorldDoc, SNode, SpaceItem } from './types'
 import { makeSampleWorld } from './sampleWorld'
 import { measureTextNode, wrappedHeight } from './textMeasure'
 
@@ -21,6 +21,12 @@ export const defaultZoom = () =>
   typeof window !== 'undefined' && window.innerWidth <= 640 ? 0.75 : 1
 let camera: Camera = { x: 0, y: 0, zoom: defaultZoom() }
 let spacePath: string[] = [] // 진입한 폴더 node id 스택 (빈 배열 = 최상위)
+// 캔버스 그리기 영역 크기(px). InfiniteCanvas가 리사이즈마다 갱신.
+// 프레임 캡처(현재 보이는 월드 영역 계산)와 적용(영역→줌 fit)에 필요.
+let viewport = {
+  w: typeof window !== 'undefined' ? window.innerWidth : 1280,
+  h: typeof window !== 'undefined' ? window.innerHeight : 800,
+}
 let selection = new Set<string>() // 선택된 placement id 집합(다중선택)
 
 // 카메라는 자주 바뀌므로 React를 건드리지 않음(=버벅임 방지).
@@ -175,6 +181,107 @@ export const getGridBold = () => !!doc.gridBold // 기본 false
 export function setGridBold(on: boolean) {
   doc.gridBold = on
   changed()
+}
+
+// ── 평행우주 (공간 × PC/Mobile 두 버전) ──────────────────────────
+// 한 공간에 PC 버전 / Mobile 버전을 따로 둔다. "활성 우주"는 수동 탭(PC/Mobile)으로 고르며
+// 실제 기기와 무관 — PC에서도 Mobile 탭을 눌러 모바일 우주를 보고 편집할 수 있다.
+// 프레임(화면 영역)·요소 위치·표시여부 모두 이 활성 우주를 기준으로 한다.
+// 기본값만 현재 기기로 시작(폰=mobile, 그 외=pc).
+export type FrameTarget = 'pc' | 'mobile'
+const isMobileDevice = () => typeof window !== 'undefined' && window.innerWidth <= 640
+const deviceTarget = (): FrameTarget => (isMobileDevice() ? 'mobile' : 'pc')
+
+// 활성 우주(저장 안 함, 새로고침 시 기기 기본값으로). 모든 우주별 분기의 기준.
+let frameTarget: FrameTarget = deviceTarget()
+export const getFrameTarget = () => frameTarget
+export function setFrameTarget(t: FrameTarget) {
+  frameTarget = t
+  // 그 우주에 저장된 프레임이 있으면 그 view로 복귀(같은 탭 다시 눌러도 재복귀).
+  // 없으면 현 화면 유지(원점으로 튀지 않게) — 위치·표시만 활성 우주 기준으로 갱신.
+  const f = getFrame(getCurrentSpace(), t)
+  if (f) camera = fitCameraToFrame(f)
+  markDirty() // 캔버스: 위치·표시·프레임 점선 모두 활성 우주 기준으로 다시 그림
+  bumpUI()
+}
+
+/** 캔버스 그리기 영역 크기 등록 (InfiniteCanvas 리사이즈/매 프레임). */
+export function setViewport(w: number, h: number) {
+  if (w > 0 && h > 0) viewport = { w, h }
+}
+
+/** 영역(Frame)을 현재 기기 화면에 꽉 차게(contain) 중앙 정렬하는 카메라. */
+function fitCameraToFrame(f: Frame): Camera {
+  const zoom = Math.min(viewport.w / f.w, viewport.h / f.h)
+  return { x: f.cx, y: f.cy, zoom }
+}
+
+/** 진입 시 카메라: 활성 우주 프레임 있으면 그 영역에 contain-fit, 없으면 0,0 기본줌. */
+function entryCamera(space: string | null): Camera {
+  const f = getFrame(space, frameTarget)
+  return f ? fitCameraToFrame(f) : { x: 0, y: 0, zoom: defaultZoom() }
+}
+
+/** 공간(폴더 id / null=루트) × 타깃의 저장된 프레임. */
+export function getFrame(space: string | null, target: FrameTarget): Frame | undefined {
+  if (space === null) return target === 'mobile' ? doc.rootFrameMobile : doc.rootFramePC
+  const n = getNode(space)
+  if (!n) return undefined
+  return target === 'mobile' ? n.frameMobile : n.framePC
+}
+/** 캔버스 점선 미리보기용: 현재 공간 × 현재 선택 타깃. */
+export const getCurrentFrame = (): Frame | undefined => getFrame(getCurrentSpace(), frameTarget)
+
+/** 지금 보이는 화면 영역을 현재 공간 × 선택 타깃의 프레임으로 저장(덮어쓰기). */
+export function captureFrame() {
+  const f: Frame = {
+    cx: camera.x,
+    cy: camera.y,
+    w: viewport.w / camera.zoom,
+    h: viewport.h / camera.zoom,
+  }
+  const space = getCurrentSpace()
+  if (space === null) {
+    if (frameTarget === 'mobile') doc.rootFrameMobile = f
+    else doc.rootFramePC = f
+  } else {
+    const n = getNode(space)
+    if (!n) return
+    if (frameTarget === 'mobile') n.frameMobile = f
+    else n.framePC = f
+    n.updatedAt = Date.now()
+  }
+  changed()
+}
+
+/** 현재 공간 × 선택 타깃의 프레임 삭제. */
+export function clearFrame() {
+  const space = getCurrentSpace()
+  if (space === null) {
+    if (frameTarget === 'mobile') delete doc.rootFrameMobile
+    else delete doc.rootFramePC
+  } else {
+    const n = getNode(space)
+    if (n) {
+      if (frameTarget === 'mobile') delete n.frameMobile
+      else delete n.framePC
+      n.updatedAt = Date.now()
+    }
+  }
+  changed()
+}
+
+export const getShowFrame = () => !!doc.showFrame // 기본 false
+export function setShowFrame(on: boolean) {
+  doc.showFrame = on
+  changed()
+}
+
+/** 현재 공간 × 현재 기기 프레임으로 카메라를 다시 맞춤(로드 직후·기기 전환 시 호출). */
+export function applyEntryFrame() {
+  camera = entryCamera(getCurrentSpace())
+  markDirty()
+  bumpUI()
 }
 
 /** 저장 성공 시 호출 → "변경 없음" 상태로. */
@@ -432,6 +539,26 @@ export function getPlacement(pid: string | null | undefined): Placement | undefi
   if (!pid) return undefined
   return doc.placements.find((p) => p.id === pid)
 }
+
+// ── 우주별 위치 해석 ─────────────────────────────────────────
+// PC 우주=x,y / Mobile 우주=mx,my(없으면 x,y로 폴백). 같은 배치가 우주마다 다른 자리에 놓일 수 있음.
+// 활성 우주(frameTarget) 기준 — 실제 기기가 아니라 수동 탭을 따른다.
+export function placementPos(p: Placement): { x: number; y: number } {
+  if (frameTarget === 'mobile' && p.mx !== undefined && p.my !== undefined) {
+    return { x: p.mx, y: p.my }
+  }
+  return { x: p.x, y: p.y }
+}
+/** 활성 우주에 맞는 좌표 슬롯에 기록(Mobile이면 mx,my / PC면 x,y). */
+function writePos(p: Placement, x: number, y: number) {
+  if (frameTarget === 'mobile') {
+    p.mx = x
+    p.my = y
+  } else {
+    p.x = x
+    p.y = y
+  }
+}
 export function getSelectedNode(): SNode | undefined {
   const pid = getSoleSelectedPid()
   const p = pid ? getPlacement(pid) : undefined
@@ -442,10 +569,25 @@ export function getAsset(id: string | undefined): Asset | undefined {
   return doc.assets.find((a) => a.id === id)
 }
 
-/** 현재 공간의 배치들 (보관 전용 stored는 캔버스에 안 보이므로 제외) */
+/** 현재 공간의 배치들 (보관 stored / 다른 우주 전용 device는 캔버스에 안 보이므로 제외) */
 export function placementsInCurrentSpace(): Placement[] {
   const space = getCurrentSpace()
-  return doc.placements.filter((p) => p.space === space && !p.stored)
+  return doc.placements.filter(
+    (p) => p.space === space && !p.stored && (!p.device || p.device === frameTarget),
+  )
+}
+
+/** 선택된 배치들의 기기 표시 설정. device=undefined → 양쪽 다(필드 제거). */
+export function setPlacementDevice(pid: string | null, device: FrameTarget | undefined) {
+  const pids = selection.size ? [...selection] : pid ? [pid] : []
+  if (!pids.length) return
+  for (const id of pids) {
+    const p = getPlacement(id)
+    if (!p) continue
+    if (device) p.device = device
+    else delete p.device
+  }
+  changed()
 }
 
 /** 특정 공간의 모든 배치(보관 포함) — 보관함 트리용 */
@@ -533,8 +675,7 @@ export function itemsInCurrentSpace(): SpaceItem[] {
       badgeSize: n.badgeSize,
       badgeColor: n.badgeColor,
       badgeBg: n.badgeBg,
-      x: p.x,
-      y: p.y,
+      ...placementPos(p), // 현재 기기에 맞는 x,y (모바일 전용 좌표 폴백 포함)
       locked: p.locked,
     })
   }
@@ -548,7 +689,7 @@ export function enterFolder(nodeId: string) {
   if (getCurrentSpace() === nodeId) return
   spacePath.push(nodeId)
   selection = new Set()
-  camera = { x: 0, y: 0, zoom: defaultZoom() }
+  camera = entryCamera(nodeId)
   changed()
 }
 
@@ -565,7 +706,7 @@ export function goTo(spaceId: string | null) {
     if (i >= 0) spacePath = spacePath.slice(0, i + 1)
   }
   selection = new Set()
-  camera = { x: 0, y: 0, zoom: defaultZoom() }
+  camera = entryCamera(spaceId)
   changed()
 }
 
@@ -678,8 +819,7 @@ export function liveResizeText(pid: string, w: number, h: number, cx: number, cy
   if (!n) return
   n.w = Math.max(8, w)
   n.h = Math.max(8, h)
-  pl.x = cx
-  pl.y = cy
+  writePos(pl, cx, cy)
   markDirty()
 }
 
@@ -719,8 +859,7 @@ export function commitText(
     if (wrap !== undefined && !n.lock) n.wrap = wrap // 화면 폭 도달 시 줄바꿈 모드
     n.updatedAt = Date.now()
   }
-  pl.x = cx
-  pl.y = cy
+  writePos(pl, cx, cy)
   changed()
 }
 
@@ -728,8 +867,7 @@ export function commitText(
 export function moveNodeLive(pid: string, x: number, y: number) {
   const p = getPlacement(pid)
   if (!p || p.locked) return // 잠긴 항목은 움직이지 않음
-  p.x = x
-  p.y = y
+  writePos(p, x, y)
   markDirty()
 }
 
@@ -762,8 +900,7 @@ export function setNodeSizeLive(nodeId: string, w: number, h: number) {
 export function setPlacementXY(pid: string, x: number, y: number) {
   const p = getPlacement(pid)
   if (!p || p.locked) return // 잠긴 항목은 좌표 편집 무시
-  p.x = x
-  p.y = y
+  writePos(p, x, y)
   const n = getNode(p.nodeId)
   if (n) n.updatedAt = Date.now()
   changed()
@@ -1475,6 +1612,7 @@ export async function init() {
   } catch {
     doc = makeSampleWorld()
   }
+  camera = entryCamera(getCurrentSpace()) // 로드 직후 루트 프레임에 맞춰 들어오기
   resetHistory()
   changed()
 }

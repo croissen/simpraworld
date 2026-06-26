@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react'
 // 드래그 중 다른 칩 위로 가면 그 자리로 순서가 바로 바뀜. 손 떼면 저장.
 const chip: CSSProperties = {
   display: 'inline-flex',
-  alignItems: 'center',
+  alignItems: 'center', // 글자·× 세로 중앙
   gap: 4,
   background: '#e6ecfb',
   border: '1px solid #c4d3f5',
@@ -12,10 +12,13 @@ const chip: CSSProperties = {
   borderRadius: 999,
   padding: '3px 4px 3px 9px',
   fontSize: 12,
+  lineHeight: 1.3,
+  maxWidth: '100%', // 칸 넘으면 줄바꿈(아래 label에서 단어 분리)
   cursor: 'grab',
   touchAction: 'none',
   userSelect: 'none',
 }
+const label: CSSProperties = { overflowWrap: 'anywhere', minWidth: 0 } // 아주 긴 태그만 칸 안에서 분리
 const xbtn: CSSProperties = {
   border: 'none',
   background: '#cdd9f3',
@@ -30,6 +33,7 @@ const xbtn: CSSProperties = {
   alignItems: 'center',
   justifyContent: 'center',
   padding: 0,
+  flexShrink: 0, // 긴 태그가 줄바꿈돼도 × 버튼은 안 찌부됨
 }
 
 export default function TagRow({
@@ -105,7 +109,7 @@ export default function TagRow({
               : {}),
           }}
         >
-          #{t}
+          <span style={label}>#{t}</span>
           <button onPointerDown={(e) => e.stopPropagation()} onClick={() => onRemove(t)} title="Remove" style={xbtn}>
             ×
           </button>

@@ -7,6 +7,7 @@ import {
   getCurrentSpace,
   getNode,
   getPlacement,
+  placementPos,
   getSelectedNode,
   getSoleSelectedPid,
   movePlacementToSpace,
@@ -67,6 +68,7 @@ export default function Inspector({
   const count = placementCount(n.id)
   const pid = getSoleSelectedPid()
   const pl = getPlacement(pid)
+  const pos = pl ? placementPos(pl) : { x: 0, y: 0 } // 현재 기기 기준 좌표(PC=x,y / 모바일=mx,my)
 
   // resize (keep ratio when locked)
   function setW(v: number) {
@@ -129,7 +131,7 @@ export default function Inspector({
             <S.Mini
               title="Move to parent folder"
               onClick={() => {
-                movePlacementToSpace(pid, parentSpace(), pl ? pl.x : 0, pl ? pl.y : 0)
+                movePlacementToSpace(pid, parentSpace(), pos.x, pos.y)
               }}
             >
               ↑ Out
@@ -248,8 +250,8 @@ export default function Inspector({
                 numeric
                 type="number"
                 disabled={pl.locked}
-                value={Math.round(pl.x)}
-                onCommit={(v) => pid && setPlacementXY(pid, Number(v), pl.y)}
+                value={Math.round(pos.x)}
+                onCommit={(v) => pid && setPlacementXY(pid, Number(v), pos.y)}
               />
             </S.DimBox>
             <S.DimBox>
@@ -258,8 +260,8 @@ export default function Inspector({
                 numeric
                 type="number"
                 disabled={pl.locked}
-                value={Math.round(pl.y)}
-                onCommit={(v) => pid && setPlacementXY(pid, pl.x, Number(v))}
+                value={Math.round(pos.y)}
+                onCommit={(v) => pid && setPlacementXY(pid, pos.x, Number(v))}
               />
             </S.DimBox>
             <S.Lock

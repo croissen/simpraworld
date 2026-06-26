@@ -46,6 +46,7 @@ import {
   undo,
 } from './store'
 import { initCurrentFile, saveUniverse } from './currentFile'
+import { ensureEmojiFont } from './canvas/emoji'
 import TextEditor from './ui/TextEditor'
 import { fileToImage } from './image'
 import { GlobalStyle } from './global.styles'
@@ -62,6 +63,7 @@ export default function App() {
   useEffect(() => {
     init()
     initCurrentFile() // 이전 세션에서 저장한 .spu 파일 핸들 복원
+    ensureEmojiFont() // Windows 등 native 미지원 환경에서만 컬러 이모지 웹폰트 로드(DOM용)
   }, [])
 
   // 선택 N개 삭제 요청(1개여도 확인). 컴포넌트 미리보기 선택은 별도.

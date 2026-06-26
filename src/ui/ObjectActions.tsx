@@ -8,6 +8,7 @@ import {
   getSoleSelectedPid,
   openContextMenu,
   openNote,
+  placementPos,
   selectionCount,
   setCamera,
   setEditOpen,
@@ -36,9 +37,10 @@ export default function ObjectActions() {
           const pl = getPlacement(pid)
           const n = pl && getNode(pl.nodeId)
           if (!pl || !n) continue
-          minX = Math.min(minX, pl.x - n.w / 2)
-          maxX = Math.max(maxX, pl.x + n.w / 2)
-          topY = Math.min(topY, pl.y - n.h / 2)
+          const pos = placementPos(pl)
+          minX = Math.min(minX, pos.x - n.w / 2)
+          maxX = Math.max(maxX, pos.x + n.w / 2)
+          topY = Math.min(topY, pos.y - n.h / 2)
         }
         if (isFinite(minX)) {
           const cx = (minX + maxX) / 2
@@ -65,9 +67,10 @@ export default function ObjectActions() {
     const pl = refPid ? getPlacement(refPid) : null
     if (!pl) return
     const c = getCamera()
-    const sx = (pl.x - c.x) * c.zoom + window.innerWidth / 2
-    const sy = (pl.y - c.y) * c.zoom + window.innerHeight / 2
-    openContextMenu({ x: sx, y: sy, wx: pl.x, wy: pl.y, pid: refPid, nodeId: pl.nodeId })
+    const pos = placementPos(pl)
+    const sx = (pos.x - c.x) * c.zoom + window.innerWidth / 2
+    const sy = (pos.y - c.y) * c.zoom + window.innerHeight / 2
+    openContextMenu({ x: sx, y: sy, wx: pos.x, wy: pos.y, pid: refPid, nodeId: pl.nodeId })
   }
 
   const openEdit = () => {
@@ -77,7 +80,8 @@ export default function ObjectActions() {
       // 좌표가 아니라 뷰만 이동: 개체를 화면 위쪽 30%로 → 하단 편집 패널에 안 가리게
       const c = getCamera()
       const H = window.innerHeight
-      setCamera({ x: pl.x, y: pl.y - (H * 0.3 - H / 2) / c.zoom, zoom: c.zoom })
+      const pos = placementPos(pl)
+      setCamera({ x: pos.x, y: pos.y - (H * 0.3 - H / 2) / c.zoom, zoom: c.zoom })
     }
     setEditOpen(true)
   }

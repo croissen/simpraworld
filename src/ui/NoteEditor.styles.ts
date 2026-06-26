@@ -15,8 +15,8 @@ export const Overlay = styled.div`
 export const Paper = styled.div<{ $cap?: boolean }>`
   width: 100%;
   max-width: 780px;
-  height: 72%;
-  max-height: 660px;
+  height: auto; /* 본문(고정) + 태그 줄 수에 맞춰 세로로 커짐 */
+  max-height: 90vh;
   background: #f3f1ea;
   border: 1px solid #d9d4c7;
   border-radius: 14px;
@@ -152,7 +152,7 @@ export const PopInput = styled.input`
     border-color: #3ddc7f;
   }
 `
-export const PopArea = styled.textarea`
+export const PopArea = styled.textarea.attrs({ spellCheck: false, autoCapitalize: 'off' })`
   width: 100%;
   box-sizing: border-box;
   min-height: 0; /* 1줄부터 시작, 줄바꿈마다 자동 증가 */
@@ -295,7 +295,7 @@ export const ShareItem = styled.button`
   }
 `
 
-export const Search = styled.input`
+export const Search = styled.input.attrs({ spellCheck: false })`
   flex: none;
   width: 100%;
   background: #fbfaf5;
@@ -412,7 +412,11 @@ export const Bar = styled.div`
   border-bottom: 1px solid #e3dece;
 `
 
-export const Title = styled.input`
+export const Title = styled.input.attrs({
+  spellCheck: false,
+  autoCorrect: 'off',
+  autoCapitalize: 'off',
+})`
   flex: 1;
   min-width: 0;
   background: none;
@@ -442,7 +446,12 @@ export const Revert = styled(Close)`
   color: #2a3f6b;
 ` // X 왼쪽: 미리보기 취소(원래 노트로)
 
-export const Body = styled.textarea`
+export const Body = styled.textarea.attrs({
+  spellCheck: false,
+  autoCorrect: 'off',
+  autoCapitalize: 'off',
+  autoComplete: 'off',
+})`
   flex: 1;
   resize: none;
   border: none;
@@ -452,9 +461,47 @@ export const Body = styled.textarea`
   font-size: 15px;
   line-height: 1.65;
   padding: 16px 18px;
-  font-family: inherit;
+  font-family: inherit; /* 기본(비례) 폰트 유지 */
+  tab-size: 8; /* Tab 표 정렬 칸 간격(스페이스 8칸 폭) */
+  -moz-tab-size: 8;
+  font-variant-numeric: tabular-nums; /* 숫자 폭 고정 → figure space(숫자폭 공백)와 일치 */
   &::placeholder {
     color: #a39e8f;
+  }
+  /* PC(≥641px): 본문 높이 고정 → 태그 줄이 늘어도 본문은 안 줄고, 늘어난 만큼 노트(Paper)가 커짐.
+     모바일은 위의 flex:1로 MPaper를 채움(이 규칙 미적용). */
+  @media (min-width: 641px) {
+    flex: none;
+    height: 52vh;
+  }
+`
+
+/* 본문 + 떠 있는 Tab 칩 컨테이너(모바일: 소프트 키보드엔 Tab 키가 없어서) */
+export const BodyWrap = styled.div`
+  position: relative;
+  flex: 1;
+  display: flex;
+  min-height: 0;
+`
+
+/* 모바일 Tab 버튼: 본문 우하단에 떠 있음. pointerdown에서 포커스 유지(키보드 안 내려감). */
+export const TabKey = styled.button`
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  border: 1px solid #d4cdb9;
+  background: rgba(243, 241, 234, 0.92);
+  color: #6b6453;
+  border-radius: 9px;
+  padding: 7px 13px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.14);
+  cursor: pointer;
+  touch-action: none;
+  &:active {
+    background: #e7e2d4;
   }
 `
 
@@ -478,6 +525,7 @@ export const MHead = styled.div`
   padding: 12px;
   border-bottom: 1px solid #e3dece;
 `
+
 export const MThumb = styled.div`
   position: relative;
   width: 100px;
@@ -617,8 +665,16 @@ export const TagBar = styled.div`
   border-top: 1px solid #e3dece;
   padding: 10px 12px;
   display: flex;
+  flex-direction: column; /* 칩은 위에 쌓이고, 입력란은 아래 고정(폭 유지, 옆으로 안 밀림) */
+  align-items: stretch;
+  gap: 8px;
+  background: #f3f1ea;
+`
+
+/* 해시태그 칩 묶음(입력란 위에서 줄바꿈하며 쌓임) */
+export const TagChips = styled.div`
+  display: flex;
   flex-wrap: wrap;
-  align-items: center;
   gap: 6px;
 `
 
@@ -663,9 +719,9 @@ export const Tag = styled.span`
   }
 `
 
-export const TagInput = styled.input`
-  flex: 1;
-  min-width: 90px;
+export const TagInput = styled.input.attrs({ spellCheck: false, autoCapitalize: 'off' })`
+  flex: none;
+  width: 100%; /* 아래 고정 폭 — 칩이 쌓여도 옆으로 안 밀림 */
   background: none;
   border: none;
   outline: none;
@@ -690,7 +746,11 @@ export const CapTag = styled.span`
   border-radius: 999px;
   padding: 2px 8px;
   font-size: 10.5px;
-  white-space: nowrap; /* #호날도 가 중간에 안 잘리게 */
+  display: inline-flex;
+  align-items: center; /* 글자 세로 중앙 */
+  line-height: 1.3;
+  max-width: 100%; /* 칸(왼쪽 열) 넘지 않게 → 내용 영역 침범 방지 */
+  overflow-wrap: anywhere; /* 아주 긴 태그만 칸 안에서 줄바꿈(짧은 건 그대로) */
 `
 /* 캡처 시 본문: textarea 대신 div로 전체 내용 표시(길면 아래로 계속 이어짐) */
 export const CapBody = styled.div`
@@ -701,6 +761,9 @@ export const CapBody = styled.div`
   color: #2b2a26;
   white-space: pre-wrap;
   word-break: break-word;
+  tab-size: 8;
+  -moz-tab-size: 8;
+  font-variant-numeric: tabular-nums;
 `
 
 /* 공유 캡처: 조작 버튼·기본 태그바·textarea 숨기고, 창은 내용만큼 늘림(긴 글 안 잘림) */

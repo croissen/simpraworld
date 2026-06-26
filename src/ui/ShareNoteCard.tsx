@@ -20,6 +20,8 @@ const bodyStyle: React.CSSProperties = {
   lineHeight: 1.6,
   whiteSpace: 'pre-wrap',
   wordBreak: 'break-word',
+  tabSize: 8, // 메모 Tab 정렬을 공유 카드에서도 동일하게
+  fontVariantNumeric: 'tabular-nums', // 숫자 폭 고정(figure space 정렬과 일치)
 }
 const chipsStyle: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 6 }
 const chipStyle: React.CSSProperties = {

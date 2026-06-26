@@ -10,6 +10,19 @@ export type NodeType = 'folder' | 'memo' | 'photo' | 'text' // text = 캔버스 
 export type Shape = 'rect' | 'circle' | 'triangle' | 'hexagon' | 'image'
 
 /**
+ * Frame = 공간(폴더/루트)마다 저장하는 "기준 화면 영역"(월드 사각형).
+ * 좌표·줌이 아니라 영역으로 저장 → 기기 화면 비율이 달라도 이 영역이 화면에
+ * 꽉 차게(contain) 중앙에 들어오도록 줌이 자동 계산됨. 가로 넓은 PC에서 딴 프레임을
+ * 세로 긴 모바일로 보면 좌우가, 반대면 위아래가 비는 식(레터박스).
+ */
+export interface Frame {
+  cx: number // 영역 중심 월드 X
+  cy: number // 영역 중심 월드 Y
+  w: number // 영역 가로(월드 단위)
+  h: number // 영역 세로(월드 단위)
+}
+
+/**
  * 컴포넌트 = "재사용할 노드(폴더·메모)를 내용째 저장해둔 복사본".
  * doc = 그 노드 하나(폴더면 하위 전체)를 담은 독립 미니 문서(.smk와 같은 구조).
  * 목록에서 더블클릭 = 현재 공간에 그대로 복제(stamp). 다운로드 = "{name}_comp.smk".
@@ -56,6 +69,8 @@ export interface SNode {
   badgeSize?: number // 배지 폰트 크기(월드 단위, 기본 14). 노드 크기와 무관 → 가림 비율 고정.
   badgeColor?: string // 배지 글자색(기본 진한색)
   badgeBg?: string // 배지 배경색. 'none'=배경 없음, 미지정=기본 앰버
+  framePC?: Frame // 폴더 전용: PC로 진입할 때 맞춰 들어갈 기준 영역(없으면 0,0 기본줌)
+  frameMobile?: Frame // 폴더 전용: 모바일로 진입할 때의 기준 영역
   updatedAt: number
 }
 
@@ -68,6 +83,9 @@ export interface Placement {
   y: number
   locked?: boolean // 위치 잠금: true면 드래그·좌표편집으로 안 움직임
   stored?: boolean // 보관 전용: 캔버스에 안 그려지고 보관함/검색에만 존재(교체 대기)
+  device?: 'pc' | 'mobile' // 이 기기에서만 표시(없으면 양쪽 다). PC/모바일 우주를 다르게 구성.
+  mx?: number // 모바일 우주 전용 X(없으면 x 사용). PC=x,y / 모바일=mx,my → 평행우주 위치.
+  my?: number // 모바일 우주 전용 Y(없으면 y 사용)
 }
 
 /** 캔버스 렌더/조작용 조인 뷰: placement(위치) + node(데이터). 저장 안 됨, 런타임 계산용. */
@@ -120,6 +138,9 @@ export interface SimpraWorldDoc {
   bgColor?: string // 캔버스 배경색(없으면 기본 #0f1115)
   showGrid?: boolean // 그리드 표시 여부(없으면 기본 true)
   gridBold?: boolean // 그리드 선명하게(진하게)
+  rootFramePC?: Frame // 최상위(My Universe) 공간의 PC 기준 영역
+  rootFrameMobile?: Frame // 최상위 공간의 모바일 기준 영역
+  showFrame?: boolean // 현재 공간의 프레임 점선 테두리 표시 여부(기본 false)
 }
 
 // 캔버스 기본 배경색 (배경색 미설정 시 / 되돌리기 기준)

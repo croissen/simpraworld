@@ -23,7 +23,7 @@ export const Msg = styled.div`
   line-height: 1.5;
   margin-bottom: 16px;
 `
-export const Input = styled.input`
+export const Input = styled.input.attrs({ spellCheck: false, autoCapitalize: 'off' })`
   width: 100%;
   background: #0f1320;
   border: 1px solid #2b3346;

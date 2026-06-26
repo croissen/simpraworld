@@ -18,7 +18,7 @@ export const GlobalStyle = createGlobalStyle`
     overflow: hidden;
     background: #0f1115;
     color: #e8ecf3;
-    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif, 'Noto Color Emoji';
     -webkit-user-select: none;
     user-select: none;
     overscroll-behavior: none;

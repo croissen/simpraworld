@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { commitText, getCamera, getNode, getPlacement, liveResizeText, setCamera } from '../store'
+import { commitText, getCamera, getNode, getPlacement, liveResizeText, placementPos, setCamera } from '../store'
 import { useIsMobile } from '../useIsMobile'
 
 // 캔버스 텍스트 개체 인라인 편집: 개체 위 textarea로 바로 입력.
@@ -16,7 +16,7 @@ export default function TextEditor({ pid }: { pid: string }) {
 
   // 시작 중심(월드, 고정). 박스는 이 점을 중심으로 커짐.
   const center = useRef<{ x: number; y: number } | null>(null)
-  if (!center.current && pl) center.current = { x: pl.x, y: pl.y }
+  if (!center.current && pl) center.current = placementPos(pl)
   const font = useRef({ bold: !!n?.bold, fontSize: n?.fontSize || 20 })
   const lockedW = useRef<number | null>(null)
   if (lockedW.current == null && n) lockedW.current = n.w

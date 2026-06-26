@@ -101,7 +101,7 @@ export const ItemName = styled.div`
   overflow: hidden;
   text-overflow: ellipsis;
 `
-export const RenameInput = styled.input`
+export const RenameInput = styled.input.attrs({ spellCheck: false, autoCapitalize: 'off' })`
   width: 100%;
   background: #161b27;
   border: 1px solid #3ddc7f;

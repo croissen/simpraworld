@@ -41,6 +41,9 @@ export default function CommitInput({
   const El = Comp as ComponentType<InputHTMLAttributes<HTMLInputElement>>
   return (
     <El
+      spellCheck={false}
+      autoCorrect="off"
+      autoCapitalize="off"
       {...rest}
       value={text}
       enterKeyHint="done"

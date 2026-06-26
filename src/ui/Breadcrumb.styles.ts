@@ -29,7 +29,7 @@ export const Sep = styled.span`
   padding: 0 2px;
 `
 
-export const RootInput = styled.input`
+export const RootInput = styled.input.attrs({ spellCheck: false, autoCapitalize: 'off' })`
   background: #0f1320;
   border: 1px solid #3ddc7f;
   color: #e8ecf3;
