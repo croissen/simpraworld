@@ -82,8 +82,8 @@ export interface Placement {
   x: number
   y: number
   locked?: boolean // 위치 잠금: true면 드래그·좌표편집으로 안 움직임
-  stored?: boolean // PC 우주 보관: 캔버스에 안 그려지고 보관함/검색에만(교체 대기). 모바일은 storedM 없으면 이 값 폴백.
-  storedM?: boolean // 모바일 우주 보관(없으면 stored 폴백) → 우주마다 보관/노출 다르게.
+  stored?: boolean // PC 우주 보관: 캔버스에 안 그려지고 보관함/검색에만(교체 대기).
+  storedM?: boolean // 모바일 우주 보관 — PC(stored)와 완전 독립(폴백 없음).
   mx?: number // 모바일 우주 전용 X(없으면 x 사용). PC=x,y / 모바일=mx,my → 평행우주 위치.
   my?: number // 모바일 우주 전용 Y(없으면 y 사용)
 }

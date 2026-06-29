@@ -602,10 +602,9 @@ function writePos(p: Placement, x: number, y: number) {
   }
 }
 
-// 보관(라이브러리에 넣음) 여부도 우주별. Mobile은 storedM 없으면 stored(PC)로 폴백.
+// 보관(라이브러리에 넣음) 여부는 우주별 완전 독립 — 한쪽에서 보관해도 다른쪽엔 영향 없음(폴백 없음).
 export function isStored(p: Placement): boolean {
-  if (frameTarget === 'mobile' && p.storedM !== undefined) return p.storedM
-  return !!p.stored
+  return frameTarget === 'mobile' ? !!p.storedM : !!p.stored
 }
 function writeStored(p: Placement, v: boolean) {
   if (frameTarget === 'mobile') p.storedM = v
@@ -1208,11 +1207,20 @@ export function swapInNote(slotPid: string, newNodeId: string) {
   if (other) {
     other.nodeId = oldNodeId // 그 배치(보관/노출 상태 유지)에 기존 노트가 들어감
   } else {
-    // newNode가 이 공간에 배치가 없던 경우 → 기존 노트를 보관 전용으로 새로 보관
-    doc.placements.push({ id: uid('p'), nodeId: oldNodeId, space, x: slot.x, y: slot.y, stored: true })
+    // newNode가 이 공간에 배치가 없던 경우 → 기존 노트를 보관 전용으로 새로 보관(양쪽 우주 다 숨김)
+    doc.placements.push({
+      id: uid('p'),
+      nodeId: oldNodeId,
+      space,
+      x: slot.x,
+      y: slot.y,
+      stored: true,
+      storedM: true,
+    })
   }
   slot.nodeId = newNodeId
-  slot.stored = false // 자리는 노출 상태로
+  slot.stored = false // 자리는 노출 상태로(양쪽 우주)
+  delete slot.storedM
   changed()
 }
 
