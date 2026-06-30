@@ -117,7 +117,7 @@ export default function Toolbar() {
     addPhoto(img, centerWorld().x, centerWorld().y)
   }
 
-  // import a .smk folder into My Universe (auto "(1)" on name clash)
+  // import a .smk folder into the current space (auto "(1)" on name clash)
   async function onImport() {
     const file = await pickSmkFile()
     if (!file) return
@@ -244,7 +244,7 @@ export default function Toolbar() {
                 ? `⤓ Export (${selectionCount()})`
                 : '⤓ Export'}
           </S.Button>,
-          <S.Button key="import" onClick={onImport} title="Import a .spu into My Universe (merge)">
+          <S.Button key="import" onClick={onImport} title="Import a .smk into the current space (merge)">
             ⤒ Import
           </S.Button>,
           <S.Button

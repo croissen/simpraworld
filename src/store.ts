@@ -1543,7 +1543,8 @@ export function replaceWorld(incoming: SimpraWorldDoc) {
 }
 
 /** .smk 폴더를 My Universe(최상위)로 가져오기. 루트 폴더 이름이 겹치면 "이름(1)". */
-export function importWorld(incoming: SimpraWorldDoc) {
+export function importWorld(incoming: SimpraWorldDoc, at?: { x: number; y: number }) {
+  const space = getCurrentSpace() // 현재 들어와 있는 공간에 가져옴(루트 아님)
   migrateEdgesToPlacements(incoming) // 구버전(node 기준) .smk도 placement 기준으로 변환 후 가져옴
   const idMap = new Map<string, string>()
   const remap = (old: string) => {
@@ -1559,17 +1560,18 @@ export function importWorld(incoming: SimpraWorldDoc) {
   for (const n of incoming.nodes) {
     doc.nodes.push({ ...n, id: remap(n.id), assetId: n.assetId ? remap(n.assetId) : undefined })
   }
-  // 유니버스 최상위에 이미 있는 이름들
+  // 현재 공간에 이미 있는 이름들(이름 충돌 시 "(1)")
   const rootNames = new Set<string>()
   for (const p of doc.placements) {
-    if (p.space === null) {
+    if (p.space === space) {
       const nm = getNode(p.nodeId)?.name
       if (nm) rootNames.add(nm)
     }
   }
-  // 붙여넣기처럼: 가져온 루트가 기존 노드와 안 겹치게 오프셋 (지금 doc 기준으로 미리 계산)
+  // 붙여넣기처럼: 가져온 루트가 기존과 안 겹치게 오프셋. 위치 지정 시 그 좌표(우클릭 자리), 없으면 카메라 중앙.
   const importRoots = incoming.placements.filter((p) => p.space === null)
-  const { dx, dy } = findFreeOffset(null, importRoots, 0, 0)
+  const base = at ?? { x: camera.x, y: camera.y }
+  const { dx, dy } = findFreeOffset(space, importRoots, base.x, base.y)
   const newRootPids: string[] = []
   for (const p of incoming.placements) {
     const newNodeId = remap(p.nodeId)
@@ -1589,7 +1591,7 @@ export function importWorld(incoming: SimpraWorldDoc) {
     doc.placements.push({
       id: newPid,
       nodeId: newNodeId,
-      space: isRoot ? null : remap(p.space!),
+      space: isRoot ? space : remap(p.space!), // 루트 항목은 현재 공간으로
       x: isRoot ? p.x + dx : p.x,
       y: isRoot ? p.y + dy : p.y,
       locked: p.locked, // 위치잠금 유지
@@ -1599,8 +1601,8 @@ export function importWorld(incoming: SimpraWorldDoc) {
   for (const e of incoming.edges) {
     doc.edges.push({ id: uid('e'), from: remap(e.from), to: remap(e.to), color: e.color, bold: e.bold })
   }
-  spacePath = [] // 가져온 건 유니버스 루트에서 보이게
-  selection = new Set(newRootPids) // 붙여넣은 것처럼 전부 선택 → 바로 이동 가능
+  // 현재 공간에 머무름(루트로 안 나감). 붙여넣은 것처럼 전부 선택 → 바로 이동 가능.
+  selection = new Set(newRootPids)
   changed()
 }
 

@@ -9,6 +9,7 @@ import {
   getContextMenu,
   getNode,
   hasClipboard,
+  importWorld,
   pasteClipboardAt,
   reorderPlacement,
   selectionCount,
@@ -17,6 +18,7 @@ import {
 } from '../store'
 import { exportSelectionOrSpace } from '../currentFile'
 import { fileToImage } from '../image'
+import { importSmk, pickSmkFile } from '../smk'
 import { useIsMobile } from '../useIsMobile'
 import * as S from './ContextMenu.styles'
 
@@ -52,6 +54,17 @@ export default function ContextMenu({
     }
   }
 
+  // .smk 가져오기 → 현재 공간의 우클릭 자리에 배치
+  async function importHere(wx: number, wy: number) {
+    const file = await pickSmkFile()
+    if (!file) return
+    try {
+      importWorld(await importSmk(file), { x: wx, y: wy })
+    } catch (e) {
+      alert('Import failed: ' + (e as Error).message)
+    }
+  }
+
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if (e.key === 'Escape') closeContextMenu()
@@ -69,7 +82,7 @@ export default function ContextMenu({
   }
 
   // 보일 항목 수로 대략적 높이 추정 → 화면 밖으로 안 나가게 클램프 (Paste here는 항상 표시)
-  const rows = (node ? 8 : 0) + 1
+  const rows = (node ? 8 : 0) + 2
   const left = Math.min(cm.x, window.innerWidth - 200)
   const top = Math.min(cm.y, window.innerHeight - (rows * 34 + 24))
 
@@ -93,6 +106,9 @@ export default function ContextMenu({
           </S.Item>
         )}
         {!isMobile && <S.Item onClick={run(() => pasteHere(cm.wx, cm.wy))}>Paste here</S.Item>}
+        <S.Item onClick={run(() => importHere(cm.wx, cm.wy))} title="Import a .smk into this space (here)">
+          ⤒ Import
+        </S.Item>
 
         {node && (
           <>

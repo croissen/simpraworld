@@ -15,8 +15,7 @@ export const Overlay = styled.div`
 export const Paper = styled.div<{ $cap?: boolean }>`
   width: 100%;
   max-width: 780px;
-  height: auto; /* 본문(고정) + 태그 줄 수에 맞춰 세로로 커짐 */
-  max-height: 90vh;
+  height: 72vh; /* 고정 높이 — 노트가 많아도 안 늘어남(왼쪽 리스트가 안에서 스크롤) */
   background: #f3f1ea;
   border: 1px solid #d9d4c7;
   border-radius: 14px;
@@ -342,7 +341,7 @@ export const ClearBtn = styled.button`
 
 export const Results = styled.div`
   flex: 1;
-  min-height: 0;
+  min-height: 0; /* Paper가 고정 높이라 여기서 스크롤됨(노트 많아도 창 안 늘어남) */
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -468,11 +467,11 @@ export const Body = styled.textarea.attrs({
   &::placeholder {
     color: #a39e8f;
   }
-  /* PC(≥641px): 본문 높이 고정 → 태그 줄이 늘어도 본문은 안 줄고, 늘어난 만큼 노트(Paper)가 커짐.
-     모바일은 위의 flex:1로 MPaper를 채움(이 규칙 미적용). */
+  /* PC(≥641px): 본문이 Paper(고정 높이)의 남는 공간을 채움 → 태그 입력란이 본문 바로 밑에 붙음(빈칸 없음).
+     태그가 많으면 TagBar가 커지고 본문이 줄어듦. 모바일은 위 flex:1로 MPaper 채움. */
   @media (min-width: 641px) {
-    flex: none;
-    height: 52vh;
+    flex: 1;
+    min-height: 0;
   }
 `
 
@@ -676,6 +675,8 @@ export const TagChips = styled.div`
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  max-height: 22vh; /* 칩이 많아도 여기까지만 — 넘으면 스크롤. 덕분에 아래 입력란("Max")이 안 잘림 */
+  overflow-y: auto;
 `
 
 /* 해시태그 드래그 중 들어갈 자리 표시(삽입 막대) */
