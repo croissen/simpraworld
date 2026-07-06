@@ -33,12 +33,14 @@ import {
   getSelectedComponentId,
   getSelection,
   getSnapshot,
+  groupSelection,
   init,
   pasteClipboard,
   redo,
   saveSelectionAsComponent,
   selectAll,
   selectionCount,
+  ungroupSelection,
   selectionHasShared,
   setPlacementXY,
   subscribe,
@@ -116,6 +118,13 @@ export default function App() {
       if (ctrl && (e.key === 'a' || e.key === 'A')) {
         e.preventDefault()
         selectAll()
+        return
+      }
+      // Ctrl+G 그룹화 / Ctrl+Shift+G 그룹 해제
+      if (ctrl && (e.key === 'g' || e.key === 'G')) {
+        e.preventDefault()
+        if (e.shiftKey) ungroupSelection()
+        else groupSelection()
         return
       }
       if (ctrl && (e.key === 'c' || e.key === 'C')) {

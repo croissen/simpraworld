@@ -1,6 +1,6 @@
 import { get, set } from 'idb-keyval'
 import { DEFAULT_BG, emptyDoc, uid } from './types'
-import type { Asset, ComponentDef, Frame, NodeType, Placement, SEdge, SimpraWorldDoc, SNode, SpaceItem } from './types'
+import type { Asset, ComponentDef, Frame, NodeType, Placement, SEdge, Shape, SimpraWorldDoc, SNode, SpaceItem } from './types'
 import { makeSampleWorld } from './sampleWorld'
 import { measureTextNode, wrappedHeight } from './textMeasure'
 
@@ -402,6 +402,47 @@ export function setAspectLocked(v: boolean) {
   bumpUI()
 }
 
+// ── 도형 그리기 도구 ─────────────────────────────────────────
+// 툴바에서 도형(사각형·원·삼각형·선)을 고르면 이 값이 세팅되고, 캔버스에서
+// 다음 드래그로 실제 크기·각도를 그린다(피그마/엑스칼리드로식). 한 번 그리면 해제.
+let drawTool: Shape | null = null
+export const getDrawTool = () => drawTool
+export function setDrawTool(s: Shape | null) {
+  drawTool = s
+  bumpUI()
+}
+
+/** 그리기 시작: (x,y)에 아주 작은 도형 노드를 즉시 만든다(히스토리 없음 — 손 뗄 때 확정). */
+export function addShapeAt(shape: Shape, x: number, y: number): { nodeId: string; pid: string } {
+  const node: SNode = {
+    id: uid('s'),
+    type: 'shape',
+    name: 'Shape',
+    shape,
+    w: shape === 'line' ? 2 : 8,
+    h: shape === 'line' ? 1 : 8, // 선 최초 두께=1
+    color: '#5b8cff',
+    updatedAt: Date.now(),
+  }
+  doc.nodes.push(node)
+  const space = getCurrentSpace()
+  const pl: Placement = { id: uid('p'), nodeId: node.id, space, x, y }
+  doc.placements.push(pl)
+  selection = new Set([pl.id])
+  bumpUI()
+  markDirty()
+  return { nodeId: node.id, pid: pl.id }
+}
+
+/** 그리기 취소(Esc·너무 작음): 방금 만든 도형을 히스토리 없이 제거. */
+export function cancelDrawNode(nodeId: string, pid: string) {
+  doc.placements = doc.placements.filter((p) => p.id !== pid)
+  doc.nodes = doc.nodes.filter((n) => n.id !== nodeId)
+  selection = new Set()
+  bumpUI()
+  markDirty()
+}
+
 export const getSelectedComponentId = () => selectedComponentId
 export function selectComponent(id: string | null) {
   selectedComponentId = id
@@ -701,6 +742,8 @@ export function itemsInCurrentSpace(): SpaceItem[] {
       assetId: n.assetId,
       textColor: n.textColor,
       emphasize: n.emphasize,
+      hideName: n.hideName,
+      rotation: n.rotation,
       fontSize: n.fontSize,
       bold: n.bold,
       align: n.align,
@@ -749,17 +792,323 @@ export function goTo(spaceId: string | null) {
 
 // ── 선택 (placement id 집합) ────────────────────────────────
 /** additive=true(Shift) → 토글, 아니면 단독 선택. null → 전체 해제 */
+/** 그룹 확장: pid가 그룹에 속하면 같은 그룹의 모든 배치(같은 공간)를 함께 반환. */
+function groupMembers(pid: string): string[] {
+  const p = getPlacement(pid)
+  if (!p || !p.groupId) return [pid]
+  return doc.placements.filter((q) => q.groupId === p.groupId && q.space === p.space).map((q) => q.id)
+}
+
 export function select(pid: string | null, additive = false) {
   if (pid === null) {
     selection = new Set()
-  } else if (additive) {
-    selection.has(pid) ? selection.delete(pid) : selection.add(pid)
   } else {
-    selection = new Set([pid])
+    const members = groupMembers(pid) // 그룹이면 통째로 선택
+    if (additive) {
+      const allIn = members.every((m) => selection.has(m))
+      for (const m of members) allIn ? selection.delete(m) : selection.add(m)
+    } else {
+      selection = new Set(members)
+    }
   }
   if (pid) selectedComponentId = null // 노드 선택 시 컴포넌트 미리보기 선택 해제(배타)
   mobileEditOpen = false // 선택 바뀌면 모바일 편집 패널은 닫고 연필부터
   changed()
+}
+
+// ── 그룹화 ────────────────────────────────────────────────────
+/** 선택(2개 이상)을 한 그룹으로 묶음 → 이후 하나만 클릭해도 함께 선택·이동. */
+export function groupSelection() {
+  const pids = [...selection]
+  if (pids.length < 2) return
+  const gid = uid('g')
+  for (const pid of pids) {
+    const p = getPlacement(pid)
+    if (p) p.groupId = gid
+  }
+  if (!doc.groups) doc.groups = {}
+  doc.groups[gid] = { rot: 0 } // 그룹 회전값 초기화
+  changed()
+}
+/** 선택된 것들의 그룹 해제. */
+export function ungroupSelection() {
+  for (const pid of selection) {
+    const p = getPlacement(pid)
+    if (p) delete p.groupId
+  }
+  changed()
+}
+/** 선택 전체가 같은 한 그룹인지(=Ungroup 버튼 노출 조건). */
+export function selectionGrouped(): boolean {
+  const pids = [...selection]
+  if (pids.length < 2) return false
+  const g0 = getPlacement(pids[0])?.groupId
+  return !!g0 && pids.every((pid) => getPlacement(pid)?.groupId === g0)
+}
+/** 현재 선택이 한 그룹이면 그 groupId, 아니면 null */
+export function selectedGroupId(): string | null {
+  if (!selectionGrouped()) return null
+  return getPlacement([...selection][0])?.groupId ?? null
+}
+/** 그룹 확장 없이 한 배치만 단독 선택(그룹 안에서 개별 요소 편집용). */
+export function selectSingle(pid: string) {
+  selection = new Set([pid])
+  selectedComponentId = null
+  mobileEditOpen = false
+  changed()
+}
+export const getGroupRot = (gid: string) => doc.groups?.[gid]?.rot || 0
+/** 그룹 회전각 누적(라이브) — 선택 박스 방향 갱신용 */
+export function addGroupRotLive(gid: string, ddeg: number) {
+  if (!doc.groups) doc.groups = {}
+  const cur = doc.groups[gid]?.rot || 0
+  doc.groups[gid] = { rot: ((((cur + ddeg) % 360) + 360) % 360) }
+  markDirty()
+}
+
+/** 그룹의 방향 있는 경계 상자(OBB) — 회전해도 크기가 안 변하는 안정 박스. 월드 좌표. */
+export function groupOBB(gid: string): { cx: number; cy: number; hw: number; hh: number; rot: number } | null {
+  const members = doc.placements.filter(
+    (p) => p.groupId === gid && p.space === getCurrentSpace() && !isStored(p),
+  )
+  if (!members.length) return null
+  const rot = doc.groups?.[gid]?.rot || 0
+  const rad = (rot * Math.PI) / 180
+  // 멤버 중심들의 무게중심
+  let sx = 0
+  let sy = 0
+  const centers = members.map((p) => placementPos(p))
+  for (const c of centers) {
+    sx += c.x
+    sy += c.y
+  }
+  const cenX = sx / centers.length
+  const cenY = sy / centers.length
+  // 각 멤버 박스 모서리를 그룹 로컬(rot 역회전)로 옮겨 AABB → 회전 불변
+  const cb = Math.cos(-rad)
+  const sb = Math.sin(-rad)
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (let i = 0; i < members.length; i++) {
+    const n = getNode(members[i].nodeId)
+    if (!n) continue
+    const pos = centers[i]
+    const mrad = ((n.rotation || 0) * Math.PI) / 180
+    const mc = Math.cos(mrad)
+    const ms = Math.sin(mrad)
+    for (const gx of [-1, 1])
+      for (const gy of [-1, 1]) {
+        const cw = pos.x + gx * (n.w / 2) * mc - gy * (n.h / 2) * ms
+        const cwy = pos.y + gx * (n.w / 2) * ms + gy * (n.h / 2) * mc
+        const dx = cw - cenX
+        const dy = cwy - cenY
+        const lx = dx * cb - dy * sb
+        const ly = dx * sb + dy * cb
+        minX = Math.min(minX, lx)
+        maxX = Math.max(maxX, lx)
+        minY = Math.min(minY, ly)
+        maxY = Math.max(maxY, ly)
+      }
+  }
+  const bx = (minX + maxX) / 2
+  const by = (minY + maxY) / 2
+  const cf = Math.cos(rad)
+  const sf = Math.sin(rad)
+  return {
+    cx: cenX + bx * cf - by * sf,
+    cy: cenY + bx * sf + by * cf,
+    hw: (maxX - minX) / 2,
+    hh: (maxY - minY) / 2,
+    rot,
+  }
+}
+
+/** 그룹 멤버들의 드래그 시작 스냅샷 반환(스케일 원본). */
+export function groupScaleSnapshot(
+  gid: string,
+): { pid: string; nodeId: string; x: number; y: number; w: number; h: number }[] {
+  return doc.placements
+    .filter((p) => p.groupId === gid && p.space === getCurrentSpace() && !isStored(p))
+    .map((p) => {
+      const pos = placementPos(p)
+      const n = getNode(p.nodeId)
+      return { pid: p.id, nodeId: p.nodeId, x: pos.x, y: pos.y, w: n?.w || 8, h: n?.h || 8 }
+    })
+}
+/** 스냅샷 기준 절대 배율 스케일(누적 안 됨) — pivot 고정. 라이브. */
+export function scaleGroupApply(
+  orig: { pid: string; nodeId: string; x: number; y: number; w: number; h: number }[],
+  factor: number,
+  pivotX: number,
+  pivotY: number,
+) {
+  const f = Math.max(0.05, factor)
+  for (const o of orig) {
+    const p = getPlacement(o.pid)
+    if (p) writePos(p, pivotX + (o.x - pivotX) * f, pivotY + (o.y - pivotY) * f)
+    const n = getNode(o.nodeId)
+    if (n) {
+      n.w = Math.max(1, o.w * f)
+      n.h = Math.max(1, o.h * f)
+    }
+  }
+  markDirty()
+}
+
+// ── 척추화(관절 연결 = 뼈대) ──────────────────────────────────
+export const isSpined = (pid: string) => !!getPlacement(pid)?.spineParent
+
+/** pid의 직속 척추 자식들 */
+function spineChildren(pid: string): string[] {
+  return doc.placements.filter((p) => p.spineParent === pid).map((p) => p.id)
+}
+/** pid의 모든 척추 하위(재귀, 자기 제외) */
+export function spineDescendants(pid: string): string[] {
+  const out: string[] = []
+  const stack = [...spineChildren(pid)]
+  while (stack.length) {
+    const id = stack.pop()!
+    if (out.includes(id)) continue
+    out.push(id)
+    stack.push(...spineChildren(id))
+  }
+  return out
+}
+/** 순환 방지: parent가 child의 후손이거나 자기 자신이면 true */
+function spineWouldCycle(childPid: string, parentPid: string): boolean {
+  return childPid === parentPid || spineDescendants(childPid).includes(parentPid)
+}
+
+/** 자식 배치의 관절점(회전 축) 월드 좌표 = 부모중심 + Rot(부모회전)·로컬오프셋 */
+export function spineJointWorld(childPid: string): { x: number; y: number } | null {
+  const c = getPlacement(childPid)
+  if (!c || !c.spineParent || c.spineJX === undefined || c.spineJY === undefined) return null
+  const par = getPlacement(c.spineParent)
+  if (!par) return null
+  const pn = getNode(par.nodeId)
+  const rot = ((pn?.rotation || 0) * Math.PI) / 180
+  const cos = Math.cos(rot)
+  const sin = Math.sin(rot)
+  const pos = placementPos(par)
+  return { x: pos.x + c.spineJX * cos - c.spineJY * sin, y: pos.y + c.spineJX * sin + c.spineJY * cos }
+}
+
+// 척추화 마법사: 우클릭 Spine → ①자기 연결점 클릭 → ②상대 연결점 클릭(꿰매기)
+// step1=자기 점 대기, step2=상대 점 대기(자기 점은 childAX/AY에 월드로 보관)
+let spineWizard: { childPid: string; step: 1 | 2; childAX?: number; childAY?: number } | null = null
+export const getSpineWizard = () => spineWizard
+/** 우클릭 대상(childPid)으로 척추화 시작 → 다음 캔버스 클릭이 '자기 연결점'. */
+export function beginSpineFor(childPid: string) {
+  const p = getPlacement(childPid)
+  if (!p) return
+  spineWizard = { childPid, step: 1 }
+  // 그룹이면 그룹 전체를 자식으로(선택 유지), 아니면 그 하나만
+  selection = new Set(p.groupId ? groupMembers(childPid) : [childPid])
+  bumpUI()
+  markDirty()
+}
+export function cancelSpine() {
+  if (!spineWizard) return
+  spineWizard = null
+  bumpUI()
+  markDirty()
+}
+/** ① 자기 도형의 연결점(월드) 확정 → step2로. */
+export function setSpineChildAnchor(wx: number, wy: number) {
+  if (!spineWizard || spineWizard.step !== 1) return
+  spineWizard = { ...spineWizard, step: 2, childAX: wx, childAY: wy }
+  bumpUI()
+  markDirty()
+}
+/** ② 상대 도형(parentPid)의 연결점(월드)에 꿰맴 → 부모/관절 저장 + 자식(그룹)을 그 점으로 당겨 붙임. */
+export function finishSpine(parentPid: string, wx: number, wy: number) {
+  if (!spineWizard || spineWizard.step !== 2 || spineWizard.childAX === undefined) return
+  const childPid = spineWizard.childPid
+  const cp = getPlacement(childPid)
+  const par = getPlacement(parentPid)
+  // 그룹이면 멤버 전체가 자식
+  const members = cp?.groupId ? groupMembers(childPid) : [childPid]
+  if (!par || members.includes(parentPid) || members.some((m) => spineWouldCycle(m, parentPid))) {
+    spineWizard = null
+    bumpUI()
+    markDirty()
+    return
+  }
+  // 부모 연결점을 부모 로컬 프레임으로 저장(=관절). 그룹이면 모든 멤버가 같은 관절 공유.
+  const pn = getNode(par.nodeId)
+  const rot = ((pn?.rotation || 0) * Math.PI) / 180
+  const cos = Math.cos(-rot)
+  const sin = Math.sin(-rot)
+  const ppos = placementPos(par)
+  const jdx = wx - ppos.x
+  const jdy = wy - ppos.y
+  const jx = jdx * cos - jdy * sin
+  const jy = jdx * sin + jdy * cos
+  for (const m of members) {
+    const mp = getPlacement(m)
+    if (!mp) continue
+    mp.spineParent = parentPid
+    mp.spineJX = jx
+    mp.spineJY = jy
+  }
+  // 실로 꿰매기: 자식의 연결점(childAX/AY)이 부모 연결점(wx,wy)에 붙게 자식(그룹+하위) 전체 이동
+  const dx = wx - spineWizard.childAX
+  const dy = wy - spineWizard.childAY!
+  const unit = new Set<string>()
+  for (const m of members) {
+    unit.add(m)
+    for (const d of spineDescendants(m)) unit.add(d)
+  }
+  for (const id of unit) {
+    const p = getPlacement(id)
+    if (!p) continue
+    const pos = placementPos(p)
+    writePos(p, pos.x + dx, pos.y + dy)
+  }
+  spineWizard = null
+  changed()
+}
+export function unspine(pid: string) {
+  const p = getPlacement(pid)
+  const members = p?.groupId ? groupMembers(pid) : [pid] // 그룹이면 전체 해제
+  for (const m of members) {
+    const mp = getPlacement(m)
+    if (mp) {
+      delete mp.spineParent
+      delete mp.spineJX
+      delete mp.spineJY
+    }
+  }
+  changed()
+}
+
+/** 강체 단위: pid가 그룹이면 그룹 멤버 전체, 아니면 자기 하나 + 각자의 척추 하위 전체. */
+export function rigidUnit(pid: string): string[] {
+  const p = getPlacement(pid)
+  const base = p?.groupId ? groupMembers(pid) : [pid]
+  const out = new Set<string>(base)
+  for (const b of base) for (const d of spineDescendants(b)) out.add(d)
+  return [...out]
+}
+
+/** 주어진 배치들을 pivot(월드) 중심으로 ddeg(도)만큼 회전(위치 궤도 + 회전각). 라이브. */
+export function rotatePidsLive(pids: string[], pivotX: number, pivotY: number, ddeg: number) {
+  const rad = (ddeg * Math.PI) / 180
+  const cos = Math.cos(rad)
+  const sin = Math.sin(rad)
+  for (const id of pids) {
+    const p = getPlacement(id)
+    if (!p) continue
+    const pos = placementPos(p)
+    const dx = pos.x - pivotX
+    const dy = pos.y - pivotY
+    writePos(p, pivotX + dx * cos - dy * sin, pivotY + dx * sin + dy * cos)
+    const n = getNode(p.nodeId)
+    if (n) n.rotation = ((((n.rotation || 0) + ddeg) % 360) + 360) % 360
+  }
+  markDirty()
 }
 export function selectMany(pids: string[]) {
   selection = new Set(pids)
@@ -775,14 +1124,15 @@ export function selectAll() {
 // ── 노드 + 배치 CRUD ─────────────────────────────────────────
 export function addNode(type: NodeType, x: number, y: number): SNode {
   const isText = type === 'text'
+  const isShape = type === 'shape' // 노트 없는 순수 도형
   const node: SNode = {
-    id: uid(type === 'folder' ? 'f' : isText ? 't' : 'm'),
+    id: uid(type === 'folder' ? 'f' : isText ? 't' : isShape ? 's' : 'm'),
     type,
-    name: type === 'folder' ? 'New folder' : isText ? 'Text' : 'New note',
-    shape: isText ? 'rect' : type === 'folder' ? 'rect' : 'circle',
+    name: type === 'folder' ? 'New folder' : isText ? 'Text' : isShape ? 'Shape' : 'New note',
+    shape: isText || type === 'folder' || isShape ? 'rect' : 'circle',
     w: isText ? 40 : 68,
     h: isText ? 30 : 68,
-    color: type === 'folder' ? '#5b8cff' : isText ? 'none' : '#34c98a',
+    color: type === 'folder' || isShape ? '#5b8cff' : isText ? 'none' : '#34c98a',
     updatedAt: Date.now(),
     ...(isText
       ? { body: '', textColor: '#ffffff', fontSize: 20, align: 'left' as const, radius: 6 }
@@ -827,6 +1177,14 @@ export function setRadiusLive(id: string, val: number) {
   n.radius = Math.max(0, Math.round(val))
   markDirty()
   bumpUI()
+}
+
+/** 사진 회전 드래그 중: 각도만 갱신(히스토리 없음). 손 떼면 updateNode(id,{})로 1스텝 확정. */
+export function setRotationLive(id: string, deg: number) {
+  const n = getNode(id)
+  if (!n) return
+  n.rotation = ((deg % 360) + 360) % 360
+  markDirty()
 }
 
 // ── 텍스트 개체 인라인 편집 ───────────────────────────────────
@@ -940,6 +1298,14 @@ export function setNodeSizeLive(nodeId: string, w: number, h: number) {
   if (!n) return
   n.w = Math.max(8, w)
   n.h = Math.max(8, h)
+  markDirty()
+}
+
+/** 선 그리기·끝점 편집: 길이(w)만 갱신(두께 h는 유지, 최소 1). */
+export function setNodeWidthLive(nodeId: string, w: number) {
+  const n = getNode(nodeId)
+  if (!n) return
+  n.w = Math.max(1, w)
   markDirty()
 }
 

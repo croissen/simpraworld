@@ -2,10 +2,13 @@ import {
   copySelection,
   getPlacement,
   getSelection,
+  groupSelection,
   placementPos,
   removeEdgesAmongSelection,
   reorderPlacement,
   selectionCount,
+  selectionGrouped,
+  ungroupSelection,
   selectionHasInternalEdges,
   selectionInternalEdges,
   setEdgeColorAmongSelection,
@@ -114,6 +117,22 @@ export default function MultiInspector({
           </S.Chip>
         </S.Row>
       </S.Field>
+
+      <S.Field>
+        <span>Group</span>
+        <S.Row>
+          {selectionGrouped() ? (
+            <S.Chip onClick={ungroupSelection} title="Ungroup — move independently again">
+              Ungroup
+            </S.Chip>
+          ) : (
+            <S.Chip onClick={groupSelection} title="Group — selecting one selects all; they move together">
+              Group (move together)
+            </S.Chip>
+          )}
+        </S.Row>
+      </S.Field>
+
 
       <S.Field>
         <S.LabelRow>

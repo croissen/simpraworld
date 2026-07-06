@@ -6,8 +6,8 @@
 //  4) 소속+좌표는 노드에서 분리해 placements(관계 테이블)로 → 한 노드가 여러 공간에
 //     동시에 존재 가능(다대다 참조). node=데이터(원본 1개), placement=어디에 어떤 좌표로 놓였나.
 
-export type NodeType = 'folder' | 'memo' | 'photo' | 'text' // text = 캔버스 위 자유 텍스트(박스 안 글자)
-export type Shape = 'rect' | 'circle' | 'triangle' | 'hexagon' | 'image'
+export type NodeType = 'folder' | 'memo' | 'photo' | 'text' | 'shape' // text=자유 텍스트, shape=노트 없는 순수 도형(선·사각형 등)
+export type Shape = 'rect' | 'circle' | 'triangle' | 'hexagon' | 'image' | 'line'
 
 /**
  * Frame = 공간(폴더/루트)마다 저장하는 "기준 화면 영역"(월드 사각형).
@@ -57,6 +57,8 @@ export interface SNode {
   assetId?: string // 이미지 아이콘
   textColor?: string // 이름(라벨) 글자색. 없으면 기본 밝은색. text 개체에선 글자색.
   emphasize?: boolean // 이름 라벨 강조(대비 테두리) → 어떤 배경에서도 잘 보이게
+  hideName?: boolean // 이름 라벨 숨김(폴더·노트) → 캔버스에 이름 안 그림
+  rotation?: number // 사진 회전 각도(도, 임의값). 개체 아래 회전 핸들을 끌어 자유 회전(90°마다 스냅). 중심 기준 강체 회전.
   fontSize?: number // text 개체 글자 크기(월드 단위, 기본 20)
   bold?: boolean // text 개체 굵게
   align?: 'left' | 'center' | 'right' // text 개체 가로 정렬(기본 left)
@@ -82,6 +84,10 @@ export interface Placement {
   x: number
   y: number
   locked?: boolean // 위치 잠금: true면 드래그·좌표편집으로 안 움직임
+  groupId?: string // 그룹화: 같은 groupId끼리 하나로 선택·이동됨(대칭). 척추화(spine)와 별개.
+  spineParent?: string // 척추화: 이 배치가 매달린 부모 배치 id(부모 이동·회전 시 함께 따라감)
+  spineJX?: number // 관절점(회전 축) — 부모 로컬 프레임 기준 X(부모 중심 기준, 부모 회전 역보정)
+  spineJY?: number // 관절점 — 부모 로컬 프레임 기준 Y
   stored?: boolean // PC 우주 보관: 캔버스에 안 그려지고 보관함/검색에만(교체 대기).
   storedM?: boolean // 모바일 우주 보관 — PC(stored)와 완전 독립(폴백 없음).
   mx?: number // 모바일 우주 전용 X(없으면 x 사용). PC=x,y / 모바일=mx,my → 평행우주 위치.
@@ -99,6 +105,8 @@ export interface SpaceItem {
   assetId?: string
   textColor?: string
   emphasize?: boolean
+  hideName?: boolean
+  rotation?: number
   fontSize?: number
   bold?: boolean
   align?: 'left' | 'center' | 'right'
@@ -135,6 +143,7 @@ export interface SimpraWorldDoc {
   edges: SEdge[]
   assets: Asset[]
   components: ComponentDef[]
+  groups?: Record<string, { rot: number }> // 그룹별 누적 회전각(도) → 선택 박스가 회전 따라 안정적으로 감쌈
   bgColor?: string // 캔버스 배경색(없으면 기본 #0f1115)
   showGrid?: boolean // 그리드 표시 여부(없으면 기본 true)
   gridBold?: boolean // 그리드 선명하게(진하게)

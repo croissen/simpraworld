@@ -12,9 +12,11 @@ import {
   getSoleSelectedPid,
   movePlacementToSpace,
   parentSpace,
+  isSpined,
   placementCount,
   removePlacement,
   reorderPlacement,
+  unspine,
   selectionCount,
   setAspectLocked,
   setPlacementXY,
@@ -35,10 +37,33 @@ const SHAPES: { v: Shape; label: string }[] = [
   { v: 'circle', label: '●' },
   { v: 'triangle', label: '▲' },
   { v: 'hexagon', label: '⬡' },
+  { v: 'line', label: '─' },
   { v: 'image', label: '🖼' },
 ]
 // 7색 프리셋(마지막=흰색). 그 아래 직접 고르는 팔레트(ColorPicker) 제공.
 const COLORS = ['#5b8cff', '#34c98a', '#ff8c5b', '#a78bfa', '#f472b6', '#e3b341', '#e5e7eb']
+
+// 이름 표시/숨김 토글 아이콘 (이모지는 OS별로 안 보이는 경우가 있어 인라인 SVG 사용)
+// 툴바 배경이 어두워 잘 안 보이므로 흰색 동그라미 위에 진한 눈을 그림.
+const EyeOpen = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="12" fill="#fff" />
+    <g fill="none" stroke="#1f2633" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3.5 12S7 6.5 12 6.5 20.5 12 20.5 12 17 17.5 12 17.5 3.5 12 3.5 12Z" />
+      <circle cx="12" cy="12" r="2.6" fill="#1f2633" />
+    </g>
+  </svg>
+)
+// 눈 감은(닫힌) 아이콘: 아래로 처진 곡선 + 속눈썹
+const EyeOff = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="12" fill="#fff" />
+    <g fill="none" stroke="#1f2633" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 10c2.2 3 5 4.6 8 4.6S17.8 13 20 10" />
+      <path d="M6 13.7 5 15.6M9.6 15.2 9 17.2M14.4 15.2l.6 2M18 13.7 19 15.6" />
+    </g>
+  </svg>
+)
 
 export default function Inspector({
   onRequestDelete,
@@ -65,22 +90,24 @@ export default function Inspector({
   if (!n) return null
   const isPhoto = n.type === 'photo' // 사진은 글자색/컬러/Shape가 의미 없음 → 해당 항목 숨김
   const isText = n.type === 'text' // 텍스트 개체: 내용/크기/볼드/글자색/배경색만
+  const isShape = n.type === 'shape' // 노트 없는 순수 도형: Shape/Color/Rotate만, 글자색·이미지 없음
   const count = placementCount(n.id)
   const pid = getSoleSelectedPid()
   const pl = getPlacement(pid)
   const pos = pl ? placementPos(pl) : { x: 0, y: 0 } // 현재 기기 기준 좌표(PC=x,y / 모바일=mx,my)
 
-  // resize (keep ratio when locked)
+  // resize (keep ratio when locked). 도형(특히 선)은 두께 1까지 허용.
+  const minDim = isShape ? 1 : 8
   function setW(v: number) {
     if (!n) return
-    v = Math.max(8, v)
-    if (lockRatio && n.w) updateNode(n.id, { w: v, h: Math.max(8, Math.round(n.h * (v / n.w))) })
+    v = Math.max(minDim, v)
+    if (lockRatio && n.w) updateNode(n.id, { w: v, h: Math.max(minDim, Math.round(n.h * (v / n.w))) })
     else updateNode(n.id, { w: v })
   }
   function setH(v: number) {
     if (!n) return
-    v = Math.max(8, v)
-    if (lockRatio && n.h) updateNode(n.id, { h: v, w: Math.max(8, Math.round(n.w * (v / n.h))) })
+    v = Math.max(minDim, v)
+    if (lockRatio && n.h) updateNode(n.id, { h: v, w: Math.max(minDim, Math.round(n.w * (v / n.h))) })
     else updateNode(n.id, { h: v })
   }
 
@@ -124,7 +151,9 @@ export default function Inspector({
               ? '🖼 Photo'
               : n.type === 'text'
                 ? 'Text'
-                : '📝 Note'}
+                : n.type === 'shape'
+                  ? '◆ Element'
+                  : '📝 Note'}
         </span>
         <S.Row>
           {getCurrentSpace() !== null && pid && (
@@ -161,6 +190,15 @@ export default function Inspector({
             >
               💡
             </S.Lock>
+            {(n.type === 'folder' || n.type === 'memo') && (
+              <S.Lock
+                $on={!!n.hideName}
+                onClick={() => updateNode(n.id, { hideName: !n.hideName })}
+                title={n.hideName ? 'Show name on canvas' : 'Hide name on canvas'}
+              >
+                {n.hideName ? <EyeOff /> : <EyeOpen />}
+              </S.Lock>
+            )}
           </S.NameRow>
         </S.Field>
       )}
@@ -185,9 +223,9 @@ export default function Inspector({
         </S.Field>
       )}
 
-      {!isPhoto && (
+      {!isPhoto && !isShape && (
         <S.Field>
-          <span>{isText ? 'Text color' : 'Text color'}</span>
+          <span>Text color</span>
           <ColorPicker
             value={n.textColor || '#e8ecf3'}
             onChange={(v) => updateNode(n.id, { textColor: v })}
@@ -310,6 +348,27 @@ export default function Inspector({
         </S.NumRow>
       </S.Field>
 
+      {(isPhoto || isShape) && (
+        <S.RefNote>
+          {n.shape === 'line'
+            ? '↔ Drag either endpoint to change the line’s angle & length.'
+            : pid && isSpined(pid)
+              ? '⋔ Spined — drag this shape to swing it around its joint (yellow dot).'
+              : '↻ Drag the round handle below the object to rotate (snaps every 90°).'}
+        </S.RefNote>
+      )}
+
+      {pid && isSpined(pid) && (
+        <S.Field>
+          <span>Spine</span>
+          <S.Row>
+            <S.Chip onClick={() => unspine(pid)} title="Detach from its parent joint">
+              Unspine
+            </S.Chip>
+          </S.Row>
+        </S.Field>
+      )}
+
       <S.Field>
         <span>Radius</span>
         <S.NumRow>
@@ -391,7 +450,7 @@ export default function Inspector({
         </S.Field>
       )}
 
-      {!isText && (
+      {!isText && !isShape && (
         <S.Field>
           <span>Image</span>
           <S.Row>

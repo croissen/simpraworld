@@ -2,18 +2,24 @@ import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import {
   addPhoto,
+  beginSpineFor,
   closeContextMenu,
   copySelection,
   duplicateSelection,
   duplicateSelectionBound,
   getContextMenu,
   getNode,
+  groupSelection,
   hasClipboard,
   importWorld,
+  isSpined,
   pasteClipboardAt,
   reorderPlacement,
   selectionCount,
+  selectionGrouped,
   storePlacement,
+  ungroupSelection,
+  unspine,
   uniqueCopySelection,
 } from '../store'
 import { exportSelectionOrSpace } from '../currentFile'
@@ -109,6 +115,45 @@ export default function ContextMenu({
         <S.Item onClick={run(() => importHere(cm.wx, cm.wy))} title="Import a .smk into this space (here)">
           ⤒ Import
         </S.Item>
+
+        {selectionCount() > 1 && (
+          <>
+            <S.Sep />
+            {selectionGrouped() ? (
+              <S.Item onClick={run(ungroupSelection)} title="Ungroup — move independently again">
+                ⧉ Ungroup
+              </S.Item>
+            ) : (
+              <S.Item
+                onClick={run(groupSelection)}
+                title="Group — selecting one selects all; they move together (Ctrl+G)"
+              >
+                ⧉ Group
+              </S.Item>
+            )}
+          </>
+        )}
+
+        {node && (node.type === 'photo' || node.type === 'shape') && (selectionCount() <= 1 || selectionGrouped()) && cm.pid && (
+          <>
+            <S.Sep />
+            {isSpined(cm.pid) ? (
+              <S.Item
+                onClick={run(() => cm.pid && unspine(cm.pid))}
+                title="Detach this shape from its parent joint"
+              >
+                ⋔ Unspine
+              </S.Item>
+            ) : (
+              <S.Item
+                onClick={run(() => cm.pid && beginSpineFor(cm.pid))}
+                title="Spine (joint) — click a point on THIS shape, then a point on another shape to sew them"
+              >
+                ⋔ Spine (connect joint)
+              </S.Item>
+            )}
+          </>
+        )}
 
         {node && (
           <>

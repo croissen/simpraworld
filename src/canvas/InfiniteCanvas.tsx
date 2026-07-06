@@ -1,13 +1,32 @@
 import { useEffect, useRef } from 'react'
-import type { SEdge, SpaceItem } from '../types'
+import type { SEdge, Shape, SpaceItem } from '../types'
 import { measureTextNode, textLines, wrappedHeight } from '../textMeasure'
 import { fillRich, measureRich } from './emoji'
 import * as S from './InfiniteCanvas.styles'
 import {
+  addShapeAt,
   bumpUI,
+  cancelDrawNode,
+  cancelSpine,
   canNestInto,
   commitMove,
   consumeDirty,
+  addGroupRotLive,
+  finishSpine,
+  getDrawTool,
+  getSpineWizard,
+  groupOBB,
+  groupScaleSnapshot,
+  isSpined,
+  rigidUnit,
+  rotatePidsLive,
+  scaleGroupApply,
+  selectSingle,
+  selectedGroupId,
+  setDrawTool,
+  setSpineChildAnchor,
+  spineDescendants,
+  spineJointWorld,
   edgesInCurrentSpace,
   enterFolder,
   getAsset,
@@ -38,8 +57,11 @@ import {
   openNote,
   select,
   selectMany,
+  selectionGrouped,
   setCamera,
   setNodeSizeLive,
+  setNodeWidthLive,
+  setRotationLive,
   swapPlacementNodes,
   togglePlacementEdge,
   updateNode,
@@ -59,6 +81,9 @@ function isLightColor(hex: string): boolean {
 const MIN_ZOOM = 0.05
 const MAX_ZOOM = 8
 const MIN_GRAB_PX = 14 // 작은 노드도 잡히게 최소 히트 반경
+const SEL_HIT_SHRINK = 0.6 // 사진·도형은 히트영역을 중앙으로 좁힘 → 큰 사진이 위 요소를 안 삼키게
+const ROT_GAP = 22 // 회전 핸들이 노드 하단에서 떨어진 거리(px)
+const ROT_SNAP_DEG = 6 // 회전 스냅: 90° 배수 근처 ±이 각도 안이면 딱 붙음
 const DWELL_MS = 300 // 폴더 위/노트 위에 이만큼 머물면 "넣기"·"맞바꾸기" 준비
 const SWAP_ANIM_MS = 240 // 맞바꿈 시 밀려나는 노트 슬라이드 시간
 
@@ -192,6 +217,8 @@ export default function InfiniteCanvas() {
       )
 
       const selN = getSelectionSet().size // 2개 이상이면 선택 개체 가운데 초록 체크
+      // 그룹 선택이면: 개별 링·체크 대신 하나의 박스로(=한 객체처럼).
+      const grouped = selectionGrouped()
       // 노드 — 보이는 것만 (뷰포트 컬링). 각 노드를 그리기 직전에 그 노드가 위쪽 끝점인 엣지를 깐다.
       const margin = 80
       for (let zi = 0; zi < items.length; zi++) {
@@ -214,16 +241,20 @@ export default function InfiniteCanvas() {
         if (p.x + hw < -margin || p.x - hw > W + margin || p.y + hh < -margin || p.y - hh > H + margin)
           continue
         // 선택: 공유 노드면 보라, 아니면 노랑. 비선택이지만 선택된 공유노드의 형제면 보라 점선(표시만).
-        const ring: Ring = isSelected(it.pid)
-          ? isShared(it.nodeId)
-            ? 'purple'
-            : 'yellow'
-          : sharedSelNodes.has(it.nodeId)
-            ? 'sibling'
-            : null
+        // 그룹 선택이면 개별 링을 안 그림(밑에서 하나의 박스로).
+        const ring: Ring =
+          grouped && isSelected(it.pid)
+            ? null
+            : isSelected(it.pid)
+              ? isShared(it.nodeId)
+                ? 'purple'
+                : 'yellow'
+              : sharedSelNodes.has(it.nodeId)
+                ? 'sibling'
+                : null
         drawNode(it, p.x, p.y, hw, hh, c.zoom, ring)
-        // 다중선택 표시: 선택 개체 가운데 초록 체크. 모바일 다중모드면 시작 개체(1개)부터 표시.
-        if ((selN > 1 || multiMode) && isSelected(it.pid)) {
+        // 다중선택 표시: 선택 개체 가운데 초록 체크. 그룹은 제외(하나의 객체처럼).
+        if (!grouped && (selN > 1 || multiMode) && isSelected(it.pid)) {
           const r = Math.max(8, Math.min(hw, hh, 14))
           ctx.fillStyle = '#34c98a'
           ctx.beginPath()
@@ -267,24 +298,140 @@ export default function InfiniteCanvas() {
         }
       }
 
+      // 그룹 선택: OBB(회전 따라 도는 안정 박스) + 코너(크기조절) + 회전/관절
+      const gh = grouped ? groupHandles() : null
+      if (gh) {
+        ctx.save()
+        ctx.translate(gh.sc.x, gh.sc.y)
+        ctx.rotate(gh.rad)
+        ctx.strokeStyle = '#3ddc7f'
+        ctx.lineWidth = 2
+        ctx.setLineDash([])
+        roundRectPath(-(gh.shw + gh.pad), -(gh.shh + gh.pad), (gh.shw + gh.pad) * 2, (gh.shh + gh.pad) * 2, 10)
+        ctx.stroke()
+        ctx.restore()
+        // 코너 핸들(크기조절)
+        ctx.fillStyle = '#fff'
+        ctx.strokeStyle = '#3ddc7f'
+        ctx.lineWidth = 1.5
+        for (const co of gh.corners) {
+          ctx.beginPath()
+          ctx.arc(co.x, co.y, 3.5, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.stroke()
+        }
+        const gAny = [...getSelectionSet()][0]
+        if (gAny && isSpined(gAny)) {
+          // 척추화된 그룹: 관절점 표시(드래그로 관절 회전)
+          const j = spineJointWorld(gAny)
+          if (j) {
+            const js = w2s(j.x, j.y)
+            ctx.strokeStyle = '#e3b341'
+            ctx.fillStyle = '#1a1300'
+            ctx.lineWidth = 2
+            ctx.beginPath()
+            ctx.arc(js.x, js.y, 5, 0, Math.PI * 2)
+            ctx.fill()
+            ctx.stroke()
+          }
+        } else {
+          // 회전 핸들
+          ctx.strokeStyle = '#3ddc7f'
+          ctx.lineWidth = 1.5
+          ctx.beginPath()
+          ctx.moveTo(gh.rotStem.x, gh.rotStem.y)
+          ctx.lineTo(gh.rotHandle.x, gh.rotHandle.y)
+          ctx.stroke()
+          ctx.beginPath()
+          ctx.arc(gh.rotHandle.x, gh.rotHandle.y, 9, 0, Math.PI * 2)
+          ctx.fillStyle = '#fff'
+          ctx.fill()
+          ctx.stroke()
+          ctx.fillStyle = '#1a7f4b'
+          ctx.font = '12px system-ui, sans-serif'
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.fillText('↻', gh.rotHandle.x, gh.rotHandle.y + 0.5)
+        }
+      }
+
       // 단일 선택 노드: 코너 리사이즈 핸들 (크기는 우측 인스펙터에 표시되므로 캔버스 라벨은 생략)
       const solePid = getSoleSelectedPid()
       if (solePid) {
         const it = items.find((i) => i.pid === solePid)
-        if (it) {
+        if (it && it.shape === 'line') {
+          // 선: 코너/회전 핸들 대신 양 끝점 핸들만(잡으면 각도·길이 조절)
           const ctr = w2s(it.x, it.y)
-          const hw = Math.max((it.w / 2) * c.zoom, 2)
-          const hh = Math.max((it.h / 2) * c.zoom, 2)
+          const rot = (((((it.rotation || 0) % 360) + 360) % 360) * Math.PI) / 180
+          const half = (it.w / 2) * c.zoom
+          const ex = Math.cos(rot) * half
+          const ey = Math.sin(rot) * half
           ctx.fillStyle = '#fff'
           ctx.strokeStyle = '#3ddc7f'
           ctx.lineWidth = 1.5
-          for (const cx of [ctr.x - hw, ctr.x + hw])
-            for (const cy of [ctr.y - hh, ctr.y + hh]) {
+          for (const s of [-1, 1]) {
+            ctx.beginPath()
+            ctx.arc(ctr.x + s * ex, ctr.y + s * ey, 4.5, 0, Math.PI * 2)
+            ctx.fill()
+            ctx.stroke()
+          }
+        } else if (it) {
+          const ctr = w2s(it.x, it.y)
+          const hw = Math.max((it.w / 2) * c.zoom, 2)
+          const hh = Math.max((it.h / 2) * c.zoom, 2)
+          const rot = (((((it.rotation || 0) % 360) + 360) % 360) * Math.PI) / 180
+          const cos = Math.cos(rot)
+          const sin = Math.sin(rot)
+          ctx.fillStyle = '#fff'
+          ctx.strokeStyle = '#3ddc7f'
+          ctx.lineWidth = 1.5
+          for (const sx of [-1, 1])
+            for (const sy of [-1, 1]) {
+              const lx = sx * hw
+              const ly = sy * hh
+              const px = ctr.x + lx * cos - ly * sin // 코너를 노드 회전만큼 돌려서 표시
+              const py = ctr.y + lx * sin + ly * cos
               ctx.beginPath()
-              ctx.arc(cx, cy, 2.75, 0, Math.PI * 2) // 코너 핸들(절반 크기)
+              ctx.arc(px, py, 2.75, 0, Math.PI * 2) // 코너 핸들(절반 크기)
               ctx.fill()
               ctx.stroke()
             }
+          // 사진·도형: 항상 화면 "아래"에 회전 핸들(개체를 돌려도 핸들은 안 돌고 밑에 유지).
+          if ((it.type === 'photo' || it.type === 'shape') && !isSpined(it.pid)) {
+            const bottomExt = hw * Math.abs(sin) + hh * Math.abs(cos) // 회전된 박스의 수직 반높이
+            const stemX = ctr.x
+            const stemY = ctr.y + bottomExt
+            const hx = ctr.x // 핸들은 화면 정하단
+            const hy = ctr.y + bottomExt + ROT_GAP
+            ctx.strokeStyle = '#3ddc7f'
+            ctx.lineWidth = 1.5
+            ctx.beginPath()
+            ctx.moveTo(stemX, stemY)
+            ctx.lineTo(hx, hy)
+            ctx.stroke()
+            ctx.beginPath()
+            ctx.arc(hx, hy, 9, 0, Math.PI * 2)
+            ctx.fillStyle = '#fff'
+            ctx.fill()
+            ctx.stroke()
+            ctx.fillStyle = '#1a7f4b'
+            ctx.font = '12px system-ui, sans-serif'
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'middle'
+            ctx.fillText('↻', hx, hy + 0.5)
+          }
+        }
+        // 척추화된 개체: 관절점(회전 축) 표시 — 노란 고리
+        const joint = it && isSpined(it.pid) ? spineJointWorld(it.pid) : null
+        if (joint) {
+          const js = w2s(joint.x, joint.y)
+          ctx.strokeStyle = '#e3b341'
+          ctx.fillStyle = '#1a1300'
+          ctx.lineWidth = 2
+          ctx.beginPath()
+          ctx.arc(js.x, js.y, 5, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.stroke()
         }
       }
 
@@ -341,6 +488,39 @@ export default function InfiniteCanvas() {
       ctx.textAlign = 'left'
       ctx.textBaseline = 'bottom'
       ctx.fillText(`zoom ${(c.zoom * 100) | 0}%  ·  ${items.length} nodes`, 10, H - 8)
+
+      // 척추화 마법사 안내 배너(상단 중앙) + step1에서 찍은 내 연결점 표시
+      const wiz = getSpineWizard()
+      if (wiz) {
+        const msg =
+          wiz.step === 1
+            ? 'Spine ①  Click the joint point ON THIS shape  (Esc to cancel)'
+            : 'Spine ②  Click the joint point on the OTHER shape to sew  (Esc to cancel)'
+        ctx.save()
+        ctx.font = '13px system-ui, sans-serif'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'top'
+        const tw = ctx.measureText(msg).width
+        ctx.fillStyle = 'rgba(20,25,40,0.92)'
+        roundRectPath(W / 2 - tw / 2 - 14, 12, tw + 28, 30, 8)
+        ctx.fill()
+        ctx.strokeStyle = '#e3b341'
+        ctx.lineWidth = 1.5
+        ctx.stroke()
+        ctx.fillStyle = '#ffe9a8'
+        ctx.fillText(msg, W / 2, 19)
+        ctx.restore()
+        if (wiz.step === 2 && wiz.childAX !== undefined && wiz.childAY !== undefined) {
+          const a = w2s(wiz.childAX, wiz.childAY)
+          ctx.strokeStyle = '#e3b341'
+          ctx.fillStyle = '#1a1300'
+          ctx.lineWidth = 2
+          ctx.beginPath()
+          ctx.arc(a.x, a.y, 5, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.stroke()
+        }
+      }
     }
 
     function drawGrid(W: number, H: number) {
@@ -401,6 +581,17 @@ export default function InfiniteCanvas() {
       const showImage = asset && zoom >= 0.2 // 사진은 20%까지 사진 그대로
       ctx.save()
 
+      // 사진·도형 자유 회전: 회전이 있으면 중심으로 옮겨 회전 → 이후 (cx,cy) 기준으로 그림
+      const rot = (((((n.rotation || 0) % 360) + 360) % 360) * Math.PI) / 180
+      let cx = x
+      let cy = y
+      if (rot) {
+        ctx.translate(x, y)
+        ctx.rotate(rot)
+        cx = 0
+        cy = 0
+      }
+
       if (showImage) {
         const im = getImg(asset!.id, asset!.thumb)
         if (im) {
@@ -409,15 +600,26 @@ export default function InfiniteCanvas() {
           const dh = hh * 2
           const rr = Math.min((n.radius || 0) * zoom, dw / 2, dh / 2)
           if (rr > 0) {
-            roundRectPath(x - dw / 2, y - dh / 2, dw, dh, rr)
+            roundRectPath(cx - dw / 2, cy - dh / 2, dw, dh, rr)
             ctx.clip()
           }
-          ctx.drawImage(im, x - dw / 2, y - dh / 2, dw, dh)
+          ctx.drawImage(im, cx - dw / 2, cy - dh / 2, dw, dh)
         }
       } else if (n.color !== 'none') {
-        ctx.fillStyle = n.color
-        drawShape(n, x, y, hw, hh, (n.radius || 0) * zoom)
-        ctx.fill()
+        if (n.shape === 'line') {
+          // 선: 박스 가로로 그은 선(두께=실제 높이×줌, 둥근 끝). 각도는 회전으로.
+          ctx.strokeStyle = n.color
+          ctx.lineWidth = Math.max(1, n.h * zoom) // hh는 최소2로 클램프됨 → 실제 높이로 두께 계산
+          ctx.lineCap = 'round'
+          ctx.beginPath()
+          ctx.moveTo(cx - hw, cy)
+          ctx.lineTo(cx + hw, cy)
+          ctx.stroke()
+        } else {
+          ctx.fillStyle = n.color
+          drawShape(n, cx, cy, hw, hh, (n.radius || 0) * zoom)
+          ctx.fill()
+        }
       }
       ctx.restore()
 
@@ -453,7 +655,9 @@ export default function InfiniteCanvas() {
       }
 
       // 선택/공유 링: green=일반 선택, purple=유니크(공유) 선택, sibling=결속 형제(점선, 표시만)
-      if (ring) {
+      // 선(line)은 감싸지 않음(양 끝 핸들만). 그 외는 전부 사각형 테두리(회전 시 같이 기울어짐).
+      // 사진·도형(선 포함)은 테두리 없이 코너 크기조절 핸들만 → 폴더·노트·텍스트만 링 표시
+      if (ring && n.type !== 'photo' && n.type !== 'shape') {
         const isText = n.type === 'text'
         if (ring === 'sibling') {
           ctx.strokeStyle = '#a78bfa'
@@ -464,17 +668,19 @@ export default function InfiniteCanvas() {
           ctx.lineWidth = isText ? 1.5 : 2.5 // 텍스트는 입력칸처럼 얇게(고정 px)
           ctx.setLineDash([])
         }
-        if (isText) {
-          // 텍스트 = 입력칸과 동일하게 박스에 딱 맞는 외곽선(패딩 없이)
-          const rr = Math.min((n.radius || 0) * zoom, hw, hh)
-          roundRectPath(x - hw, y - hh, hw * 2, hh * 2, rr)
+        const pad = isText ? 0 : 6 // 텍스트는 박스에 딱 맞게, 그 외는 살짝 여유
+        const rr = Math.min((n.radius || 0) * zoom + pad, hw + pad, hh + pad)
+        const rot = (((((n.rotation || 0) % 360) + 360) % 360) * Math.PI) / 180
+        ctx.save()
+        if (rot) {
+          ctx.translate(x, y)
+          ctx.rotate(rot)
+          roundRectPath(-hw - pad, -hh - pad, (hw + pad) * 2, (hh + pad) * 2, rr)
         } else {
-          // 그 외 개체 = 동그라미(타원) 테두리
-          const pad = 6
-          ctx.beginPath()
-          ctx.ellipse(x, y, hw + pad, hh + pad, 0, 0, Math.PI * 2)
+          roundRectPath(x - hw - pad, y - hh - pad, (hw + pad) * 2, (hh + pad) * 2, rr)
         }
         ctx.stroke()
+        ctx.restore()
         ctx.setLineDash([])
       }
 
@@ -518,8 +724,8 @@ export default function InfiniteCanvas() {
         }
       }
 
-      // 이름 (줌 충분할 때만). 사진·텍스트 개체는 아래 라벨 없이(텍스트는 박스 안 글자만).
-      if (zoom >= 0.3 && n.type !== 'photo' && n.type !== 'text') {
+      // 이름 (줌 충분할 때만). 사진·텍스트 개체는 아래 라벨 없이(텍스트는 박스 안 글자만). hideName=숨김.
+      if (zoom >= 0.3 && n.type !== 'photo' && n.type !== 'text' && n.type !== 'shape' && !n.hideName) {
         const fontPx = Math.max(11, Math.min(16, rad * 0.5))
         const tx = x
         const ty = y + hh + 4
@@ -581,30 +787,66 @@ export default function InfiniteCanvas() {
 
     // ── 렌더 루프 (dirty일 때만 = 배터리 절약, iOS 친화) ──
     function loop() {
+      // 그리기 도구·관절 지정 중이면 십자 커서(스페이스 팬 커서는 건드리지 않음)
+      if (getDrawTool() || getSpineWizard()) {
+        if (canvas.style.cursor !== 'crosshair') canvas.style.cursor = 'crosshair'
+      } else if (canvas.style.cursor === 'crosshair') {
+        canvas.style.cursor = ''
+      }
       if (swapAnim) markDirty() // 애니메이션 동안엔 매 프레임 다시 그림
       if (consumeDirty()) draw()
       raf = requestAnimationFrame(loop)
     }
     raf = requestAnimationFrame(loop)
 
-    // ── 히트 테스트 ──
-    function hitTest(sx: number, sy: number): SpaceItem | null {
+    // ── 히트 테스트 ── (excludePid: 특정 배치는 건너뜀 — 척추화 2단계에서 자식 제외용)
+    function hitTest(sx: number, sy: number, excludePid?: string): SpaceItem | null {
       const c = getCamera()
       const list = itemsInCurrentSpace()
       for (let i = list.length - 1; i >= 0; i--) {
         const it = list[i]
+        if (excludePid && it.pid === excludePid) continue
         const p = w2s(it.x, it.y)
-        const hw = Math.max((it.w / 2) * c.zoom, MIN_GRAB_PX)
-        const hh = Math.max((it.h / 2) * c.zoom, MIN_GRAB_PX)
-        if (Math.abs(sx - p.x) <= hw && Math.abs(sy - p.y) <= hh) return it
+        // 사진·도형은 히트영역을 중앙으로 좁혀 "중심을 눌러야" 선택(큰 사진의 삼킴 방지)
+        const shrink = it.type === 'photo' || it.type === 'shape' ? SEL_HIT_SHRINK : 1
+        const hw = Math.max((it.w / 2) * c.zoom * shrink, MIN_GRAB_PX)
+        const hh = Math.max((it.h / 2) * c.zoom * shrink, MIN_GRAB_PX)
+        let dx = sx - p.x
+        let dy = sy - p.y
+        const rot = (((((it.rotation || 0) % 360) + 360) % 360) * Math.PI) / 180
+        if (rot) {
+          // 커서를 노드 로컬축으로 역회전 → 축정렬 박스 판정
+          const cos = Math.cos(-rot)
+          const sin = Math.sin(-rot)
+          const rx = dx * cos - dy * sin
+          const ry = dx * sin + dy * cos
+          dx = rx
+          dy = ry
+        }
+        if (Math.abs(dx) <= hw && Math.abs(dy) <= hh) return it
       }
       return null
     }
 
     // ── 입력 (Pointer = 마우스+터치 통합) ──
     const pointers = new Map<number, { x: number; y: number }>()
-    let mode: 'none' | 'pan' | 'drag' | 'pinch' | 'marquee' | 'link' | 'resize' = 'none'
-    // 코너 리사이즈: 고정점(anchor 월드좌표) + 방향부호(sx,sy) + 비율잠금
+    let mode:
+      | 'none'
+      | 'pan'
+      | 'drag'
+      | 'pinch'
+      | 'marquee'
+      | 'link'
+      | 'resize'
+      | 'rotate'
+      | 'draw'
+      | 'lineedit'
+      | 'jointrotate'
+      | 'groupresize' = 'none'
+    // 도형 그리기: 방금 만든 도형 + 드래그 시작점(월드)
+    let drawOp: { nodeId: string; pid: string; tool: Shape; startX: number; startY: number } | null =
+      null
+    // 코너 리사이즈: 고정점(anchor 월드좌표) + 방향부호(sx,sy) + 비율잠금 + 노드 회전각(rad)
     let resizeOp: {
       pid: string
       nodeId: string
@@ -614,6 +856,38 @@ export default function InfiniteCanvas() {
       sy: number
       ratio: number
       lock: boolean
+      rot: number
+    } | null = null
+    // 사진 회전: 회전 중심(화면좌표)
+    // 단일 회전: 중심(화면) + 직전 각도 + 스냅 안 된 누적 회전(raw) → 아래 고정 핸들이라 증분식
+    let rotateOp: {
+      pid: string
+      nodeId: string
+      cx: number
+      cy: number
+      lastAng: number
+      raw: number
+    } | null = null
+    // 선 끝점 편집: 반대쪽 끝(고정점, 월드좌표)
+    let lineOp: { pid: string; nodeId: string; fixedX: number; fixedY: number } | null = null
+    // 관절/그룹 회전: 함께 돌 배치들(pids) + 축(pivot)의 월드·화면 좌표 + 직전 각도(증분)
+    let jointOp: {
+      pid: string // 확정(commit)용 대표
+      pids: string[] // 함께 회전할 배치들(강체 단위)
+      gid?: string // 그룹이면 그룹 회전각도 함께 누적
+      pivotX: number
+      pivotY: number
+      pivSX: number
+      pivSY: number
+      lastAng: number
+    } | null = null
+    // 그룹 크기조절: 고정점(반대 코너 월드) + 시작 거리 + 멤버 원본 스냅샷
+    let groupResizeOp: {
+      gid: string
+      pivotX: number
+      pivotY: number
+      startDist: number
+      snap: { pid: string; nodeId: string; x: number; y: number; w: number; h: number }[]
     } | null = null
     const HANDLE = 9 // 코너 핸들 히트 반경(px)
     let dragItem: SpaceItem | null = null
@@ -621,6 +895,8 @@ export default function InfiniteCanvas() {
     let downAt = { x: 0, y: 0 }
     let lastTapTime = 0
     let lastTapId: string | null = null
+    let lastDownTime = 0 // 그룹 멤버 더블클릭(단독선택) 감지용 — onUp 더블탭과 분리
+    let lastDownId: string | null = null
     let pinchPrev = { dist: 0, cx: 0, cy: 0 }
     // 드래그로 폴더에 넣기 / 노트끼리 데이터 맞바꾸기 (드웰)
     let dwellTarget: { pid: string; since: number } | null = null
@@ -662,37 +938,163 @@ export default function InfiniteCanvas() {
       return { x: e.clientX - rect.left, y: e.clientY - rect.top }
     }
 
+    /** 단일 선택 선(line)의 양 끝점을 (px,py)가 잡았는지 → 반대쪽 끝(고정점) 반환 */
+    function lineHandleAt(px: number, py: number) {
+      const pid = getSoleSelectedPid()
+      if (!pid) return null
+      const it = itemsInCurrentSpace().find((i) => i.pid === pid)
+      if (!it || it.shape !== 'line') return null
+      const c = getCamera()
+      const ctr = w2s(it.x, it.y)
+      const rot = (((((it.rotation || 0) % 360) + 360) % 360) * Math.PI) / 180
+      const half = (it.w / 2) * c.zoom
+      const ex = Math.cos(rot) * half
+      const ey = Math.sin(rot) * half
+      const hw = it.w / 2 // 월드 반길이(고정점 계산용)
+      const ux = Math.cos(rot)
+      const uy = Math.sin(rot)
+      for (const s of [-1, 1]) {
+        if (Math.hypot(px - (ctr.x + s * ex), py - (ctr.y + s * ey)) <= 12) {
+          // 잡은 끝의 반대쪽(-s)이 고정점
+          return {
+            pid: it.pid,
+            nodeId: it.nodeId,
+            fixedX: it.x - s * ux * hw,
+            fixedY: it.y - s * uy * hw,
+          }
+        }
+      }
+      return null
+    }
+
+    /** 선택된 그룹의 OBB 화면 좌표·코너·회전핸들 위치(회전 따라 도는 안정 박스) */
+    function groupHandles() {
+      const gid = selectedGroupId()
+      if (!gid) return null
+      const obb = groupOBB(gid)
+      if (!obb) return null
+      const c = getCamera()
+      const sc = w2s(obb.cx, obb.cy)
+      const shw = obb.hw * c.zoom
+      const shh = obb.hh * c.zoom
+      const rad = (obb.rot * Math.PI) / 180
+      const cos = Math.cos(rad)
+      const sin = Math.sin(rad)
+      const pad = 8
+      const local = (lx: number, ly: number) => ({ x: sc.x + lx * cos - ly * sin, y: sc.y + lx * sin + ly * cos })
+      const corners = [
+        { sx: -1, sy: -1, ...local(-(shw + pad), -(shh + pad)) },
+        { sx: 1, sy: -1, ...local(shw + pad, -(shh + pad)) },
+        { sx: -1, sy: 1, ...local(-(shw + pad), shh + pad) },
+        { sx: 1, sy: 1, ...local(shw + pad, shh + pad) },
+      ]
+      return { gid, obb, sc, shw, shh, rad, cos, sin, pad, corners, rotStem: local(0, shh + pad), rotHandle: local(0, shh + pad + ROT_GAP) }
+    }
+
+    /** 그룹 회전 핸들 잡았는지 */
+    function groupRotateHandleAt(px: number, py: number) {
+      const gh = groupHandles()
+      if (!gh) return null
+      const anyPid = [...getSelectionSet()][0]
+      if (anyPid && isSpined(anyPid)) return null // 척추화된 그룹은 드래그로 관절 회전
+      if (Math.hypot(px - gh.rotHandle.x, py - gh.rotHandle.y) > 12) return null
+      return {
+        pid: anyPid,
+        pids: rigidUnit(anyPid),
+        gid: gh.gid,
+        pivotX: gh.obb.cx,
+        pivotY: gh.obb.cy,
+        pivSX: gh.sc.x,
+        pivSY: gh.sc.y,
+      }
+    }
+
+    /** 그룹 코너(크기조절) 핸들 잡았는지 → 고정점(반대 코너 월드)·시작거리·스냅샷 */
+    function groupCornerAt(px: number, py: number) {
+      const gh = groupHandles()
+      if (!gh) return null
+      for (const co of gh.corners) {
+        if (Math.abs(px - co.x) <= HANDLE && Math.abs(py - co.y) <= HANDLE) {
+          // 반대 코너(월드) = 고정점
+          const oppX = gh.obb.cx + -co.sx * gh.obb.hw * gh.cos - -co.sy * gh.obb.hh * gh.sin
+          const oppY = gh.obb.cy + -co.sx * gh.obb.hw * gh.sin + -co.sy * gh.obb.hh * gh.cos
+          const grab = s2w(co.x, co.y)
+          return {
+            gid: gh.gid,
+            pivotX: oppX,
+            pivotY: oppY,
+            startDist: Math.max(1, Math.hypot(grab.x - oppX, grab.y - oppY)),
+            snap: groupScaleSnapshot(gh.gid),
+          }
+        }
+      }
+      return null
+    }
+
     /** 단일 선택 노드의 코너 핸들을 (px,py)가 잡았는지 → 리사이즈 정보 반환 */
     function cornerHandleAt(px: number, py: number) {
       const pid = getSoleSelectedPid()
       if (!pid) return null
       const it = itemsInCurrentSpace().find((i) => i.pid === pid)
-      if (!it) return null
+      if (!it || it.shape === 'line') return null // 선은 코너 리사이즈 없음(끝점만)
       const c = getCamera()
       const ctr = w2s(it.x, it.y)
       const hw = Math.max((it.w / 2) * c.zoom, 2)
       const hh = Math.max((it.h / 2) * c.zoom, 2)
-      const corners = [
-        { sx: -1, sy: -1, x: ctr.x - hw, y: ctr.y - hh },
-        { sx: 1, sy: -1, x: ctr.x + hw, y: ctr.y - hh },
-        { sx: -1, sy: 1, x: ctr.x - hw, y: ctr.y + hh },
-        { sx: 1, sy: 1, x: ctr.x + hw, y: ctr.y + hh },
-      ]
-      for (const co of corners) {
-        if (Math.abs(px - co.x) <= HANDLE && Math.abs(py - co.y) <= HANDLE) {
+      const rot = (((((it.rotation || 0) % 360) + 360) % 360) * Math.PI) / 180
+      const cos = Math.cos(rot)
+      const sin = Math.sin(rot)
+      const wu = it.w / 2 // 월드 반가로/반세로
+      const wv = it.h / 2
+      for (const co of [
+        { sx: -1, sy: -1 },
+        { sx: 1, sy: -1 },
+        { sx: -1, sy: 1 },
+        { sx: 1, sy: 1 },
+      ]) {
+        // 코너 화면 위치(노드 회전 반영)
+        const lx = co.sx * hw
+        const ly = co.sy * hh
+        const cxp = ctr.x + lx * cos - ly * sin
+        const cyp = ctr.y + lx * sin + ly * cos
+        if (Math.abs(px - cxp) <= HANDLE && Math.abs(py - cyp) <= HANDLE) {
+          // 반대편 코너(고정점)를 로컬축으로 월드에서 계산: C + (-sx·wu)·u + (-sy·wv)·v
+          const a = -co.sx * wu
+          const b = -co.sy * wv
           return {
             pid: it.pid,
             nodeId: it.nodeId,
             sx: co.sx,
             sy: co.sy,
-            ax: it.x - co.sx * (it.w / 2), // 반대편 코너(고정점) 월드좌표
-            ay: it.y - co.sy * (it.h / 2),
+            ax: it.x + a * cos - b * sin,
+            ay: it.y + a * sin + b * cos,
             ratio: it.w / Math.max(1, it.h),
             // 텍스트는 자기 lock(비율 유지+최소 글자), 그 외는 인스펙터 공통 비율락
             lock: it.type === 'text' ? !!getNode(it.nodeId)?.lock : getAspectLocked(),
+            rot,
           }
         }
       }
+      return null
+    }
+
+    /** 단일 선택 사진의 회전 핸들(하단 동그라미)을 (px,py)가 잡았는지 */
+    function rotateHandleAt(px: number, py: number) {
+      const pid = getSoleSelectedPid()
+      if (!pid) return null
+      const it = itemsInCurrentSpace().find((i) => i.pid === pid)
+      if (!it || (it.type !== 'photo' && it.type !== 'shape') || it.shape === 'line' || isSpined(it.pid))
+        return null
+      const c = getCamera()
+      const ctr = w2s(it.x, it.y)
+      const hw = Math.max((it.w / 2) * c.zoom, 2)
+      const hh = Math.max((it.h / 2) * c.zoom, 2)
+      const rot = (((((it.rotation || 0) % 360) + 360) % 360) * Math.PI) / 180
+      const bottomExt = hw * Math.abs(Math.sin(rot)) + hh * Math.abs(Math.cos(rot))
+      const hx = ctr.x // 항상 화면 정하단
+      const hy = ctr.y + bottomExt + ROT_GAP
+      if (Math.hypot(px - hx, py - hy) <= 12)
+        return { pid: it.pid, nodeId: it.nodeId, cx: ctr.x, cy: ctr.y }
       return null
     }
 
@@ -744,6 +1146,32 @@ export default function InfiniteCanvas() {
       dragGroup = null
       const touch = e.pointerType === 'touch' // 모바일: 빈 곳 = 마퀴 대신 공간 슬라이드(팬)
 
+      // 척추화 마법사: ①내 연결점 → ②상대 연결점(그 아래 도형=부모)으로 꿰맴
+      const wiz = getSpineWizard()
+      if (wiz) {
+        const w = s2w(p.x, p.y)
+        if (wiz.step === 1) {
+          setSpineChildAnchor(w.x, w.y) // 내 연결점
+        } else {
+          const target = hitTest(p.x, p.y, wiz.childPid) // 상대 도형(부모), 자식은 제외
+          if (target) finishSpine(target.pid, w.x, w.y)
+          else cancelSpine() // 빈 곳 클릭 → 취소
+        }
+        dragItem = null
+        return
+      }
+
+      // 도형 그리기 도구가 켜져 있으면: 이 드래그로 도형을 그림(다른 조작 무시)
+      const tool = getDrawTool()
+      if (tool) {
+        const wpt = s2w(p.x, p.y)
+        const created = addShapeAt(tool, wpt.x, wpt.y)
+        drawOp = { ...created, tool, startX: wpt.x, startY: wpt.y }
+        mode = 'draw'
+        dragItem = null
+        return
+      }
+
       // Ctrl+Alt = 줄잇기: 선택된 모든 배치(소스)에서 대상으로 선(클릭=연결/토글 · 박스=여러 연결)
       if (e.ctrlKey && e.altKey) {
         const srcs = [...getSelectionSet()] // placement id 기준 (배치 단위 참조선)
@@ -759,6 +1187,67 @@ export default function InfiniteCanvas() {
       // 패닝: Space 누른 채 드래그 또는 휠(가운데) 버튼
       if (spaceHeld || e.button === 1) {
         mode = 'pan'
+        dragItem = null
+        return
+      }
+
+      // 그룹 코너 핸들 잡으면 = 그룹 전체 크기조절(도형처럼)
+      const gCorner = groupCornerAt(p.x, p.y)
+      if (gCorner) {
+        mode = 'groupresize'
+        groupResizeOp = gCorner
+        dragItem = null
+        return
+      }
+
+      // 그룹 회전 핸들(그룹 박스 아래) 잡으면 = 그룹 전체를 중심축으로 회전
+      const gHandle = groupRotateHandleAt(p.x, p.y)
+      if (gHandle) {
+        mode = 'jointrotate'
+        jointOp = {
+          ...gHandle,
+          lastAng: (Math.atan2(p.y - gHandle.pivSY, p.x - gHandle.pivSX) * 180) / Math.PI,
+        }
+        dragItem = null
+        return
+      }
+
+      // 단일 선택 사진의 회전 핸들 잡으면 = 회전 (코너보다 먼저 검사)
+      const rHandle = rotateHandleAt(p.x, p.y)
+      if (rHandle && !getPlacement(rHandle.pid)?.locked) {
+        // 척추화됐으면 관절이 축, 아니면 자식이 있을 때 자기 중심이 축(하위 함께 회전)
+        const joint = isSpined(rHandle.pid) ? spineJointWorld(rHandle.pid) : null
+        const hasKids = spineDescendants(rHandle.pid).length > 0
+        if (joint || hasKids) {
+          const piv = joint ?? s2w(rHandle.cx, rHandle.cy) // 관절 없으면 자기 중심
+          const ps = joint ? w2s(joint.x, joint.y) : { x: rHandle.cx, y: rHandle.cy }
+          mode = 'jointrotate'
+          jointOp = {
+            pid: rHandle.pid,
+            pids: rigidUnit(rHandle.pid),
+            pivotX: piv.x,
+            pivotY: piv.y,
+            pivSX: ps.x,
+            pivSY: ps.y,
+            lastAng: (Math.atan2(p.y - ps.y, p.x - ps.x) * 180) / Math.PI,
+          }
+        } else {
+          mode = 'rotate'
+          rotateOp = {
+            ...rHandle,
+            lastAng: (Math.atan2(p.y - rHandle.cy, p.x - rHandle.cx) * 180) / Math.PI,
+            raw: getNode(rHandle.nodeId)?.rotation || 0,
+          }
+        }
+        dragItem = null
+        return
+      }
+
+      // 단일 선택 선의 끝점 잡으면 = 각도·길이 조절
+      const lHandle = lineHandleAt(p.x, p.y)
+      if (lHandle && !getPlacement(lHandle.pid)?.locked) {
+        mode = 'lineedit'
+        lineOp = lHandle
         dragItem = null
         return
       }
@@ -798,6 +1287,42 @@ export default function InfiniteCanvas() {
           marquee = { x0: p.x, y0: p.y, x1: p.x, y1: p.y }
         }
       } else if (hit) {
+        // 그룹 멤버를 더블클릭 = 그 하나만 단독 선택(그룹은 유지) → 개별 편집
+        const nowD = Date.now()
+        const dblGroup =
+          !e.shiftKey &&
+          lastDownId === hit.pid &&
+          nowD - lastDownTime < 350 &&
+          !!getPlacement(hit.pid)?.groupId &&
+          isSelected(hit.pid)
+        lastDownId = hit.pid
+        lastDownTime = nowD
+        if (dblGroup) {
+          selectSingle(hit.pid)
+          mode = 'none'
+          dragItem = null
+          return
+        }
+        // 이미 선택된 척추화 개체를 잡고 끌면 = 관절 축으로 회전(포즈). 하위도 함께.
+        if (isSpined(hit.pid) && isSelected(hit.pid) && !e.shiftKey) {
+          const joint = spineJointWorld(hit.pid)
+          if (joint) {
+            const js = w2s(joint.x, joint.y)
+            mode = 'jointrotate'
+            jointOp = {
+              pid: hit.pid,
+              pids: rigidUnit(hit.pid), // 그룹이면 그룹 전체가 관절 축으로 함께 회전
+              gid: getPlacement(hit.pid)?.groupId,
+              pivotX: joint.x,
+              pivotY: joint.y,
+              pivSX: js.x,
+              pivSY: js.y,
+              lastAng: (Math.atan2(p.y - js.y, p.x - js.x) * 180) / Math.PI,
+            }
+            dragItem = null
+            return
+          }
+        }
         mode = 'drag'
         dragItem = hit
         // 이미 선택돼 있던 개체만 이번에 이동 가능. 아직 선택 안 됐으면 이번 누름은 "선택만"(이동 X).
@@ -865,10 +1390,17 @@ export default function InfiniteCanvas() {
         const w = s2w(p.x, p.y)
         const rnode = getNode(resizeOp.nodeId)
         const isTextNode = rnode?.type === 'text'
+        // 노드 로컬축(회전 반영). rot=0이면 u=(1,0),v=(0,1) → 기존 축정렬과 동일.
+        const cos = Math.cos(resizeOp.rot)
+        const sin = Math.sin(resizeOp.rot)
+        const dx = w.x - resizeOp.ax
+        const dy = w.y - resizeOp.ay
+        const du = dx * cos + dy * sin // 로컬 x 성분(가로)
+        const dv = -dx * sin + dy * cos // 로컬 y 성분(세로)
         // 텍스트: 락=비율유지+글자 최소 / 언락=폭 자유 + 폭에 맞춰 줄바꿈(높이 자동)
         let minW = 8
         if (isTextNode) minW = rnode!.lock || !rnode!.wrap ? measureTextNode(rnode!).w : 40
-        const newW = Math.max(minW, Math.abs(w.x - resizeOp.ax))
+        const newW = Math.max(minW, Math.abs(du))
         let newH: number
         if (resizeOp.lock) {
           newH = newW / resizeOp.ratio // 비율 유지(사진·락 텍스트)
@@ -876,14 +1408,73 @@ export default function InfiniteCanvas() {
         } else {
           let minH = 8
           if (isTextNode) minH = rnode!.wrap ? wrappedHeight(rnode!, newW) : measureTextNode(rnode!).h
-          newH = Math.max(minH, Math.abs(w.y - resizeOp.ay))
+          newH = Math.max(minH, Math.abs(dv))
         }
         setNodeSizeLive(resizeOp.nodeId, newW, newH)
+        // 새 중심 = 고정점 + (sx·newW/2)·u + (sy·newH/2)·v
+        const au = (resizeOp.sx * newW) / 2
+        const av = (resizeOp.sy * newH) / 2
         moveNodeLive(
           resizeOp.pid,
-          resizeOp.ax + (resizeOp.sx * newW) / 2,
-          resizeOp.ay + (resizeOp.sy * newH) / 2,
+          resizeOp.ax + au * cos - av * sin,
+          resizeOp.ay + au * sin + av * cos,
         )
+        markDirty()
+      } else if (mode === 'rotate' && rotateOp) {
+        // 아래 고정 핸들 → 증분식: 커서 각도 변화만큼 raw에 누적, 출력만 90° 스냅(자석, 탈출 가능)
+        const ang = (Math.atan2(p.y - rotateOp.cy, p.x - rotateOp.cx) * 180) / Math.PI
+        rotateOp.raw += ang - rotateOp.lastAng
+        rotateOp.lastAng = ang
+        let deg = rotateOp.raw
+        const nearest = Math.round(deg / 90) * 90
+        if (Math.abs(deg - nearest) < ROT_SNAP_DEG) deg = nearest
+        setRotationLive(rotateOp.nodeId, deg)
+        markDirty()
+      } else if (mode === 'jointrotate' && jointOp) {
+        // 축 중심 증분 회전: 커서 각도 변화만큼 강체(자기+하위 또는 그룹 전체)를 함께 회전
+        const ang = (Math.atan2(p.y - jointOp.pivSY, p.x - jointOp.pivSX) * 180) / Math.PI
+        const dd = ang - jointOp.lastAng
+        jointOp.lastAng = ang
+        rotatePidsLive(jointOp.pids, jointOp.pivotX, jointOp.pivotY, dd)
+        if (jointOp.gid) addGroupRotLive(jointOp.gid, dd) // 그룹 박스도 함께 돌게
+        markDirty()
+      } else if (mode === 'groupresize' && groupResizeOp) {
+        // 그룹 크기조절: 반대 코너 고정, 거리 비율로 균일 스케일
+        const wpt = s2w(p.x, p.y)
+        const dist = Math.hypot(wpt.x - groupResizeOp.pivotX, wpt.y - groupResizeOp.pivotY)
+        scaleGroupApply(
+          groupResizeOp.snap,
+          dist / groupResizeOp.startDist,
+          groupResizeOp.pivotX,
+          groupResizeOp.pivotY,
+        )
+        markDirty()
+      } else if (mode === 'draw' && drawOp) {
+        // 도형 그리기: 시작점→현재점으로 크기(선이면 길이·각도) 결정
+        const wpt = s2w(p.x, p.y)
+        const ax = drawOp.startX
+        const ay = drawOp.startY
+        if (drawOp.tool === 'line') {
+          const dx = wpt.x - ax
+          const dy = wpt.y - ay
+          setNodeWidthLive(drawOp.nodeId, Math.hypot(dx, dy)) // 길이만(두께 유지)
+          moveNodeLive(drawOp.pid, (ax + wpt.x) / 2, (ay + wpt.y) / 2) // 중심=양끝 중점
+          setRotationLive(drawOp.nodeId, (Math.atan2(dy, dx) * 180) / Math.PI)
+        } else {
+          const w = Math.abs(wpt.x - ax)
+          const h = Math.abs(wpt.y - ay)
+          setNodeSizeLive(drawOp.nodeId, w, h)
+          moveNodeLive(drawOp.pid, (ax + wpt.x) / 2, (ay + wpt.y) / 2) // 시작~현재 박스 중심
+        }
+        markDirty()
+      } else if (mode === 'lineedit' && lineOp) {
+        // 선 끝점 편집: 고정점→현재점으로 길이·각도 갱신(두께 유지)
+        const wpt = s2w(p.x, p.y)
+        const dx = wpt.x - lineOp.fixedX
+        const dy = wpt.y - lineOp.fixedY
+        setNodeWidthLive(lineOp.nodeId, Math.hypot(dx, dy))
+        moveNodeLive(lineOp.pid, (lineOp.fixedX + wpt.x) / 2, (lineOp.fixedY + wpt.y) / 2)
+        setRotationLive(lineOp.nodeId, (Math.atan2(dy, dx) * 180) / Math.PI)
         markDirty()
       } else if ((mode === 'marquee' || mode === 'link') && marquee) {
         marquee.x1 = p.x
@@ -895,6 +1486,8 @@ export default function InfiniteCanvas() {
         if (!dragGroup) {
           const set = new Set(getSelectionSet())
           set.add(dragItem.pid)
+          // 척추 하위(자식·손자…)도 함께 이동 → 부모 움직이면 자식 따라감
+          for (const pid of [...set]) for (const d of spineDescendants(pid)) set.add(d)
           dragGroup = [...set]
             .map((pid) => {
               const pl = getPlacement(pid)
@@ -1028,6 +1621,31 @@ export default function InfiniteCanvas() {
         }
       } else if (mode === 'resize' && resizeOp) {
         commitMove(resizeOp.pid) // 크기·위치 확정(저장 + 재렌더)
+      } else if (mode === 'rotate' && rotateOp) {
+        updateNode(rotateOp.nodeId, {}) // 회전각 확정(되돌리기 1스텝 + 저장)
+      } else if (mode === 'draw' && drawOp) {
+        const dn = getNode(drawOp.nodeId)
+        // 드래그 없이 톡 눌렀거나 너무 작으면 → 기본 크기 도형 하나
+        const tiny = !dn || (drawOp.tool === 'line' ? dn.w < 12 : dn.w < 12 && dn.h < 12)
+        if (!moved || tiny) {
+          if (drawOp.tool === 'line') {
+            setNodeWidthLive(drawOp.nodeId, 120) // 두께(1) 유지, 길이만 기본
+            setRotationLive(drawOp.nodeId, 0)
+            moveNodeLive(drawOp.pid, drawOp.startX + 60, drawOp.startY)
+          } else {
+            setNodeSizeLive(drawOp.nodeId, 68, 68)
+            moveNodeLive(drawOp.pid, drawOp.startX, drawOp.startY)
+          }
+        }
+        commitMove(drawOp.pid) // 생성+크기 확정 → 히스토리 1스텝 + 저장
+        setDrawTool(null) // 도구는 1회성(다시 그리려면 메뉴에서 다시 선택)
+      } else if (mode === 'lineedit' && lineOp) {
+        commitMove(lineOp.pid) // 각도·길이·회전 확정(되돌리기 1스텝 + 저장)
+      } else if (mode === 'jointrotate' && jointOp) {
+        commitMove(jointOp.pid) // 관절 회전 확정(하위 전체 스냅샷 저장 + 되돌리기 1스텝)
+      } else if (mode === 'groupresize' && groupResizeOp) {
+        const rep = groupResizeOp.snap[0]?.pid
+        if (rep) commitMove(rep) // 그룹 크기 확정
       } else if (mode === 'pan') {
         clearLP()
         if (longPressed) {
@@ -1050,6 +1668,11 @@ export default function InfiniteCanvas() {
       marquee = null
       linkSourcePids = []
       resizeOp = null
+      rotateOp = null
+      drawOp = null
+      lineOp = null
+      jointOp = null
+      groupResizeOp = null
       markDirty()
 
       if (pointers.size === 0) {
@@ -1111,6 +1734,16 @@ export default function InfiniteCanvas() {
         spaceHeld = true
         e.preventDefault()
         canvas.style.cursor = 'grab'
+      }
+      // Esc = 도형 그리기·척추화 취소
+      if (e.code === 'Escape') {
+        if (mode === 'draw' && drawOp) {
+          cancelDrawNode(drawOp.nodeId, drawOp.pid)
+          drawOp = null
+          mode = 'none'
+        }
+        if (getDrawTool()) setDrawTool(null)
+        if (getSpineWizard()) cancelSpine()
       }
     }
     function onKeyUp(e: KeyboardEvent) {

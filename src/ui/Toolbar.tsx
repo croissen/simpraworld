@@ -4,6 +4,7 @@ import {
   addText,
   canRedo,
   canUndo,
+  setDrawTool,
   getCamera,
   getComponentsOpen,
   getLibraryOpen,
@@ -36,6 +37,7 @@ import { fileToImage, pickImageFile } from '../image'
 import ConfirmModal from './ConfirmModal'
 import PromptModal from './PromptModal'
 import OverflowMenu from './OverflowMenu'
+import ShapePicker from './ShapePicker'
 import * as S from './Toolbar.styles'
 
 export default function Toolbar() {
@@ -43,6 +45,7 @@ export default function Toolbar() {
   const [confirmLoad, setConfirmLoad] = useState(false) // Load 전 "현재 작업 저장?" 모달
   const [confirmNew, setConfirmNew] = useState(false) // New 전 "현재 작업 저장?" 모달
   const [promptName, setPromptName] = useState<string | null>(null) // 모바일 Save 시 파일명 입력
+  const [pickShape, setPickShape] = useState(false) // + Element → 도형 선택 팝업
   // 현재 파일명/존재 여부 변경 시 버튼 라벨 갱신
   useSyncExternalStore(subscribeFile, getFileSnapshot)
 
@@ -160,8 +163,24 @@ export default function Toolbar() {
           >
             + Text
           </S.Button>,
+          <S.Button
+            key="element"
+            onClick={() => setPickShape(true)}
+            title="Draw a shape — pick one, then drag on the canvas"
+          >
+            + Element
+          </S.Button>,
         ]}
       />
+      {pickShape && (
+        <ShapePicker
+          onPick={(s) => {
+            setDrawTool(s)
+            setPickShape(false)
+          }}
+          onClose={() => setPickShape(false)}
+        />
+      )}
       {/* 📄 메뉴: 보기 패널 (기본 닫힘) */}
       <OverflowMenu
         label="📁"
