@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Section, SectionHeader, SectionNum, SectionTitle, Button } from '../styles/common.js'
+import { Section, SectionHeader, SectionNum, SectionTitle } from '../styles/common.js'
 import * as S from './About.styles'
 
 export default function About() {
@@ -66,8 +66,7 @@ export default function About() {
 
       <S.CtaWrap>
         <S.CtaTitle>Welcome to SimpraWorld<br />환영합니다.</S.CtaTitle>
-        <S.CtaDesc>그동안의 성장여정을 포트폴리오에 담았습니다.</S.CtaDesc>
-        <Button as="a" href="/portfolio">포트폴리오 보러 가기 →</Button>
+        <S.CtaDesc>심플한 세계, 지금부터 함께 만들어가요.</S.CtaDesc>
       </S.CtaWrap>
     </>
   )

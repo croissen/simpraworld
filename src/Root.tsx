@@ -4,7 +4,6 @@ import { GlobalStyle } from './site/styles/GlobalStyle'
 import Layout from './site/components/Layout'
 import Landing from './site/pages/Landing'
 import About from './site/pages/About'
-import Home from './site/pages/Home'
 import Dayflip from './site/pages/Dayflip'
 import DayflipPolicy from './site/pages/DayflipPolicy'
 import DayflipData from './site/pages/DayflipData'
@@ -31,7 +30,6 @@ export default function Root() {
           <Route element={<Layout />}>
             <Route path="/" element={<Landing />} />
             <Route path="/about" element={<About />} />
-            <Route path="/portfolio" element={<Home />} />
             <Route path="/dayflip" element={<Dayflip />} />
           </Route>
           <Route path="/dayflip/policy" element={<DayflipPolicy />} />

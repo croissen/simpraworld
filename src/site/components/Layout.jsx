@@ -6,7 +6,6 @@ const NAV = [
   { to: '/', label: 'Home', end: true },
   { to: '/about', label: 'About', end: true },
   { to: '/dayflip', label: 'DayFlip', end: true },
-  { to: '/portfolio', label: 'Portfolio', end: false },
 ]
 
 export default function Layout() {

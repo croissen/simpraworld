@@ -37,9 +37,16 @@ export const Sub = styled.p`
   color: ${theme.text2};
 `
 
-export const StartBtn = styled.a`
+export const BtnRow = styled.div`
   margin-top: 3.5rem;
-  padding: 1rem 3.5rem;
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: center;
+`
+
+export const StartBtn = styled.a`
+  padding: 1rem 2.5rem;
   background: ${theme.accent};
   color: ${theme.onAccent};
   font-family: ${theme.mono};
@@ -49,5 +56,15 @@ export const StartBtn = styled.a`
   text-decoration: none;
   border-radius: 3px;
   transition: all 0.2s;
-  &:hover { background: ${theme.accent2}; transform: translateY(-2px); }
+  border: 1px solid ${theme.accent};
+  &:hover { background: ${theme.accent2}; border-color: ${theme.accent2}; transform: translateY(-2px); }
+
+  ${({ $variant }) =>
+    $variant === 'outline' &&
+    `
+      background: transparent;
+      color: ${theme.text};
+      border: 1px solid ${theme.border2};
+      &:hover { background: transparent; border-color: ${theme.text}; transform: translateY(-2px); }
+    `}
 `

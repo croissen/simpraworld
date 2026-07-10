@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="ko"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Waveform Maker · SimpraWorld</title>
+<link rel="icon" type="image/png" href="/logo.png">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Pretendard:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{ --bg:#0e1013; --panel:#15181d; --line:rgba(255,255,255,0.08); --line2:rgba(255,255,255,0.16);
+         --tx:#e9ebee; --dim:#868c95; --acc:#22c55e; --acc2:#2fe06e; --onacc:#04140a; --mono:'Space Mono',monospace; }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Pretendard',system-ui,sans-serif;background:var(--bg);color:var(--tx)}
+  .wrap{display:flex;min-height:100vh}
+  .stage{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:24px}
+  .back{position:fixed;top:16px;left:18px;font-family:var(--mono);font-size:12px;color:var(--dim);text-decoration:none;letter-spacing:.05em;z-index:10}
+  .back:hover{color:var(--acc)}
+  .panel{width:340px;background:var(--panel);border-left:1px solid var(--line);padding:18px 18px 48px;overflow-y:auto;max-height:100vh}
+  h1{font-size:15px;margin:0 0 4px;letter-spacing:.3px}
+  h1 span{color:var(--acc)}
+  .tagline{font-family:var(--mono);font-size:11px;color:var(--dim);margin:0 0 14px;letter-spacing:.05em}
+  h2{font-size:11px;color:var(--dim);margin:20px 0 8px;font-family:var(--mono);letter-spacing:.14em;text-transform:uppercase;border-top:1px solid var(--line);padding-top:14px}
+  .row{margin:10px 0}
+  .row label{display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px;color:var(--tx)}
+  .row .val{color:var(--acc);font-variant-numeric:tabular-nums;font-family:var(--mono)}
+  input[type=range]{width:100%;accent-color:var(--acc)}
+  input[type=number],input[type=text]{width:100%;background:#0c0e12;border:1px solid var(--line);color:var(--tx);border-radius:8px;padding:7px 9px;font-size:13px;font-family:var(--mono)}
+  input[type=color]{width:100%;height:34px;background:none;border:1px solid var(--line);border-radius:8px;padding:2px}
+  .seedrow{display:flex;gap:8px}
+  .seedrow input{flex:1}
+  button{cursor:pointer;border:none;border-radius:8px;font-size:13px;font-weight:600;font-family:inherit}
+  .mini{background:#20242b;color:var(--tx);padding:8px 12px}
+  .seg{display:flex;gap:6px;margin:6px 0 12px}
+  .seg button{flex:1;padding:8px 0;background:#20242b;color:var(--dim);border:1px solid transparent}
+  .seg button:hover{color:var(--tx)}
+  .seg button.on{background:transparent;color:var(--acc);border-color:var(--acc)}
+  .seg.wrap5{flex-wrap:wrap}
+  .seg.wrap5 button{flex:1 1 28%;min-width:0;font-size:12px}
+  .export{width:100%;padding:13px;background:var(--acc);color:var(--onacc);margin-top:8px}
+  .export:disabled{opacity:.5;cursor:default}
+  .status{font-size:12px;color:var(--dim);margin-top:10px;white-space:pre-wrap;word-break:break-all}
+  #stageBox{border-radius:14px;padding:26px;transition:background .15s;background:#000}
+  canvas{display:block;max-width:76vw}
+  .hint{font-size:12px;color:var(--dim);line-height:1.5}
+</style></head>
+<body>
+<a class="back" href="/">← SimpraWorld</a>
+<div class="wrap">
+  <div class="stage">
+    <div id="stageBox"><canvas id="cv"></canvas></div>
+    <div class="hint" style="max-width:520px;text-align:center">
+      배경은 저장 파일에 그대로 들어갑니다. 영상 위에 얹을 땐 편집기에서 이 배경색을
+      <b>크로마키(색상 제거)</b> 하거나 <b>'스크린' 블렌드</b>로 지우면 웨이브폼만 남아요.
+    </div>
+  </div>
+
+  <div class="panel">
+    <h1>🎚️ Waveform <span>Maker</span></h1>
+    <p class="tagline">SimpraWorld</p>
+
+    <h2>형태</h2>
+    <div class="seg wrap5" id="styleSeg">
+      <button data-style="bars" class="on">막대</button>
+      <button data-style="scope">파형</button>
+      <button data-style="mirror">대칭선</button>
+      <button data-style="area">채움</button>
+      <button data-style="scroll">심전도</button>
+    </div>
+
+    <h2>기준선</h2>
+    <div class="seg" id="anchorSeg">
+      <button data-anchor="top">위</button>
+      <button data-anchor="center" class="on">중앙</button>
+      <button data-anchor="bottom">아래</button>
+    </div>
+
+    <h2>모양</h2>
+    <div class="row"><label>막대 개수 <span class="val" id="v_bars"></span></label>
+      <input type="range" id="bars" min="10" max="160" step="1"></div>
+    <div class="row"><label>막대 두께 <span class="val" id="v_bw"></span></label>
+      <input type="range" id="bw" min="1" max="14" step="1"></div>
+    <div class="row"><label>막대 간격 <span class="val" id="v_gap"></span></label>
+      <input type="range" id="gap" min="0" max="16" step="1"></div>
+    <div class="row"><label>높이(px) <span class="val" id="v_h"></span></label>
+      <input type="range" id="h" min="40" max="360" step="2"></div>
+    <div class="row"><label>최대 채움 <span class="val" id="v_fill"></span></label>
+      <input type="range" id="fill" min="0.4" max="1" step="0.02"></div>
+
+    <h2>움직임</h2>
+    <div class="row"><label>스파이크(뾰족함) <span class="val" id="v_spk"></span></label>
+      <input type="range" id="spk" min="1" max="5" step="0.1"></div>
+    <div class="row"><label>속도(튐 빈도) <span class="val" id="v_spd"></span></label>
+      <input type="range" id="spd" min="4" max="30" step="1"></div>
+    <div class="row"><label>루프 길이(초) <span class="val" id="v_sec"></span></label>
+      <input type="range" id="sec" min="0.8" max="6" step="0.1"></div>
+    <div class="row"><label>fps <span class="val" id="v_fps"></span></label>
+      <input type="range" id="fps" min="12" max="60" step="1"></div>
+    <div class="row"><label>랜덤 패턴 (seed)</label>
+      <div class="seedrow"><input type="number" id="seed"><button class="mini" id="reseed">🎲</button></div></div>
+
+    <h2>색상</h2>
+    <div class="seg" id="modeSeg">
+      <button data-mode="solid" class="on">단색</button>
+      <button data-mode="gradient">그라데이션</button>
+      <button data-mode="rainbow">무지개</button>
+    </div>
+    <div class="row" id="colorRow"><label id="lbl_color">색</label><input type="color" id="color"></div>
+    <div class="row" id="color2Row" style="display:none"><label>두번째 색</label><input type="color" id="color2"></div>
+    <div class="row" id="rainbowHint" style="display:none"><span class="hint">🌈 무지개는 프레임 따라 흘러갑니다 (색 선택 무시).</span></div>
+    <div class="row"><label>불투명도 <span class="val" id="v_alpha"></span></label>
+      <input type="range" id="alpha" min="0" max="255" step="1"></div>
+
+    <h2>배경 (크로마키용)</h2>
+    <div class="row"><input type="color" id="bg" value="#000000"></div>
+
+    <h2>내보내기</h2>
+    <div class="seg" id="fmtSeg">
+      <button data-fmt="mp4" class="on">MP4</button>
+      <button data-fmt="webm">WebM</button>
+    </div>
+    <div class="row" id="fmtHint"><span class="hint"></span></div>
+    <div class="row"><label>파일 이름</label><input type="text" id="fname" value="waveform_loop"></div>
+    <button class="export" id="exportBtn">💾 영상 저장</button>
+    <div class="status" id="status"></div>
+  </div>
+</div>
+
+<script>
+// ===== 결정적 난수(mulberry32) → 시작=끝 무한루프 보장 =====
+function mulberry32(seed){
+  let a = seed>>>0;
+  return function(){
+    a = (a + 0x6D2B79F5)>>>0;
+    let t = a;
+    t = (t ^ (t>>>15))>>>0;
+    t = Math.imul(t, (1|a)>>>0)>>>0;
+    let u = (t ^ (t>>>7))>>>0;
+    let v = Math.imul(u, (61|t)>>>0)>>>0;
+    t = (((t+v)>>>0) ^ t)>>>0;
+    return ((t ^ (t>>>14))>>>0)/4294967296;
+  };
+}
+function loopValues(nBars,nFrames,seed,minCyc,maxCyc,harmonics,spk){
+  const rng=mulberry32(seed);
+  const t=new Float64Array(nFrames);
+  for(let f=0;f<nFrames;f++) t[f]=f/nFrames;
+  const out=[]; for(let f=0;f<nFrames;f++) out.push(new Float32Array(nBars));
+  for(let i=0;i<nBars;i++){
+    const s=new Float64Array(nFrames);
+    for(let hh=0;hh<harmonics;hh++){
+      const cyc=minCyc+Math.floor(rng()*(maxCyc-minCyc+1));
+      const amp=0.4+rng()*0.6;
+      const ph=rng();
+      for(let f=0;f<nFrames;f++) s[f]+=amp*Math.sin(2*Math.PI*(cyc*t[f]+ph));
+    }
+    let mn=Infinity,mx=-Infinity;
+    for(let f=0;f<nFrames;f++){ if(s[f]<mn)mn=s[f]; if(s[f]>mx)mx=s[f]; }
+    const span=mx-mn;
+    for(let f=0;f<nFrames;f++){ let v=(s[f]-mn)/(span+1e-9); s[f]=Math.pow(v,spk); }
+    const scale=0.35+rng()*0.65;
+    for(let f=0;f<nFrames;f++) out[f][i]=s[f]*scale;
+  }
+  return out;
+}
+
+const $=id=>document.getElementById(id);
+const cv=$("cv"), ctx=cv.getContext("2d");
+const HARMONICS=5, MINCYC=3, WPAD=40;
+
+const P={ bars:80,bw:3,gap:2,h:140,fill:0.9,spk:2.6,spd:14,sec:2.5,fps:30,seed:7,
+          color:"#ffffff",color2:"#00ff41",alpha:255,mode:"solid",style:"bars",
+          anchor:"center",fmt:"mp4",bg:"#000000" };
+const FMT_HINT={
+  mp4:"영상 파일 하나로 저장. 카톡/편집기 호환 좋음. (브라우저가 MP4 녹화 미지원이면 WebM으로 저장됨)",
+  webm:"가벼운 영상 파일. 웹/편집기용."};
+
+// ===== 색상 =====
+function hslToRgb(h,s,l){
+  function hue(p,q,t){ if(t<0)t+=1; if(t>1)t-=1;
+    if(t<1/6)return p+(q-p)*6*t; if(t<1/2)return q;
+    if(t<2/3)return p+(q-p)*(2/3-t)*6; return p; }
+  let r,g,b;
+  if(s===0){ r=g=b=l; } else {
+    const q=l<0.5?l*(1+s):l+s-l*s, p=2*l-q;
+    r=hue(p,q,h+1/3); g=hue(p,q,h); b=hue(p,q,h-1/3);
+  }
+  return [Math.floor(r*255+0.5),Math.floor(g*255+0.5),Math.floor(b*255+0.5)];
+}
+function hex2rgbTuple(hex){return [parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5),16),parseInt(hex.slice(5,7),16)];}
+function colorFor(i,nBars,f,nFrames){
+  const a=P.alpha/255;
+  if(P.mode==="gradient"){
+    const ca=hex2rgbTuple(P.color), cb=hex2rgbTuple(P.color2), t=i/Math.max(1,nBars-1);
+    const c=ca.map((v,k)=>Math.floor(v+(cb[k]-v)*t+0.5));
+    return `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+  }
+  if(P.mode==="rainbow"){
+    const h=((i/Math.max(1,nBars))+(f/Math.max(1,nFrames)))%1.0;
+    const c=hslToRgb(h,0.85,0.6);
+    return `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+  }
+  const c=hex2rgbTuple(P.color);
+  return `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+}
+
+function initUI(){
+  bars.value=P.bars; bw.value=P.bw; gap.value=P.gap; h.value=P.h; fill.value=P.fill;
+  spk.value=P.spk; spd.value=P.spd; sec.value=P.sec; fps.value=P.fps; seed.value=P.seed;
+  color.value=P.color; color2.value=P.color2; alpha.value=P.alpha; bg.value=P.bg;
+}
+let band=[], nFrames=1, W=0, H=0, minH=1, maxH=1;
+let patScroll=new Float64Array(0);   // 심전도(스크롤)용 1D 주기 패턴(부호 포함)
+let lastIdx=-1;                      // 프레임 스로틀(설정 fps로만 다시 그림)
+let pending=true;                    // 무거운 재계산 예약(입력 폭주 시 프레임당 1회로 합침)
+let bandKey="";                      // band에 영향 주는 값들의 키(바뀔 때만 재계산)
+
+function rebuild(){
+  P.bars=+bars.value; P.bw=+bw.value; P.gap=+gap.value; P.h=+h.value; P.fill=+fill.value;
+  P.spk=+spk.value; P.spd=+spd.value; P.sec=+sec.value; P.fps=+fps.value; P.seed=+seed.value;
+  P.color=color.value; P.color2=color2.value; P.alpha=+alpha.value; P.bg=bg.value;
+  v_bars.textContent=P.bars; v_bw.textContent=P.bw; v_gap.textContent=P.gap; v_h.textContent=P.h;
+  v_fill.textContent=P.fill.toFixed(2); v_spk.textContent=P.spk.toFixed(1); v_spd.textContent=P.spd;
+  v_sec.textContent=P.sec.toFixed(1); v_fps.textContent=P.fps; v_alpha.textContent=P.alpha;
+  nFrames=Math.max(1,Math.round(P.sec*P.fps));
+  const contentW=P.bars*P.bw+(P.bars-1)*P.gap;
+  W=(contentW+WPAD); H=P.h;
+  W+=W%2; H+=H%2;                       // 짝수(mp4 인코딩 호환)
+  minH=P.bw; maxH=H*P.fill;
+  if(cv.width!==W) cv.width=W;      // 크기 바뀔 때만 리셋(불필요한 클리어/렉 방지)
+  if(cv.height!==H) cv.height=H;
+  // band는 이 값들에만 의존 → 바뀔 때만 재계산 예약(색·높이 등은 재계산 없이 즉시 다시 그림)
+  const k=P.bars+','+nFrames+','+P.seed+','+P.spd+','+P.spk;
+  if(k!==bandKey){ bandKey=k; pending=true; }
+  lastIdx=-1;   // 어떤 변경이든 다음 프레임에 즉시 반영
+}
+
+// 무거운 재계산 — draw 루프에서 프레임당 최대 1회만 실행됨
+function recompute(){
+  band=loopValues(P.bars,nFrames,P.seed,MINCYC,P.spd,HARMONICS,P.spk);
+  buildScrollPattern();
+}
+
+// 심전도(스크롤)용 1D 주기 패턴: 부드러운 부호 파형(연속) → 스크롤해도 크기 안 변함
+function buildScrollPattern(){
+  const M=Math.max(160, P.bars*3);
+  const rng=mulberry32(P.seed);
+  const raw=new Float64Array(M);
+  for(let hh=0;hh<HARMONICS;hh++){
+    const cyc=MINCYC+Math.floor(rng()*(P.spd-MINCYC+1));  // 정수 사이클 → 주기적(이음새 없음)
+    const amp=0.4+rng()*0.6, ph=rng();
+    for(let j=0;j<M;j++) raw[j]+=amp*Math.sin(2*Math.PI*(cyc*(j/M)+ph));
+  }
+  let mabs=1e-9; for(let j=0;j<M;j++) mabs=Math.max(mabs,Math.abs(raw[j]));
+  patScroll=new Float64Array(M);
+  for(let j=0;j<M;j++){ const v=raw[j]/mabs;               // -1..1 (부드러움)
+    patScroll[j]=Math.sign(v)*Math.pow(Math.abs(v),P.spk); } // 뾰족하게, 부호 유지
+}
+
+function roundRect(x,y,w,hh,r){
+  r=Math.min(r,w/2,hh/2);
+  ctx.beginPath();
+  if(ctx.roundRect){ctx.roundRect(x,y,w,hh,r);} else {
+    ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+hh,r);ctx.arcTo(x+w,y+hh,x,y+hh,r);
+    ctx.arcTo(x,y+hh,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();
+  }
+  ctx.fill();
+}
+function strokeLine(n,xf,yf,colf){   // 선 그리기 (solid=한 획, 아니면 세그먼트별 색)
+  if(P.mode==="solid"){ ctx.strokeStyle=colf(0); ctx.beginPath(); ctx.moveTo(xf(0),yf(0));
+    for(let i=1;i<n;i++) ctx.lineTo(xf(i),yf(i)); ctx.stroke(); }
+  else { for(let i=0;i<n-1;i++){ ctx.strokeStyle=colf(i); ctx.beginPath();
+    ctx.moveTo(xf(i),yf(i)); ctx.lineTo(xf(i+1),yf(i+1)); ctx.stroke(); } }
+}
+function draw(now){
+  if(pending){ recompute(); pending=false; lastIdx=-1; }   // 예약된 재계산 프레임당 1회
+  const idx=Math.floor(now/1000*P.fps)%nFrames;
+  if(idx===lastIdx){ requestAnimationFrame(draw); return; }  // 같은 프레임 → 다시 안 그림(렉 방지)
+  lastIdx=idx;
+  const vals=band[idx];
+  ctx.fillStyle=P.bg; ctx.fillRect(0,0,W,H);   // 배경(저장에 포함)
+  const n=P.bars, cy=H/2, lw=Math.max(2,Math.round(P.bw*0.9));
+  const total=n*P.bw+(n-1)*P.gap, x0=(W-total)/2;
+  const xc=i=>x0+i*(P.bw+P.gap)+P.bw/2;
+  const col=i=>colorFor(i,n,idx,nFrames);
+  // 기준선(anchor): 위/중앙/아래
+  const PAD=Math.max(P.bw, H*0.05);
+  const baseY = P.anchor==='top' ? PAD : P.anchor==='bottom' ? H-PAD : cy;
+  const dir = P.anchor==='top' ? 1 : P.anchor==='bottom' ? -1 : 0;  // 0=대칭(양쪽), 1=아래로, -1=위로
+  ctx.lineWidth=lw; ctx.lineJoin="round"; ctx.lineCap="round";
+
+  if(P.style==="bars"){
+    for(let i=0;i<n;i++){ const h=Math.max(minH,vals[i]*maxH); ctx.fillStyle=col(i);
+      let y0,y1;
+      if(dir===0){ y0=cy-h/2; y1=cy+h/2; }
+      else if(dir>0){ y0=baseY; y1=baseY+h; }
+      else { y0=baseY-h; y1=baseY; }
+      roundRect(xc(i)-P.bw/2, y0, P.bw, y1-y0, P.bw/2); }
+  }
+  else if(P.style==="scope"){
+    // 제자리 심전도: 평평 기준선 + 가끔 스파이크 (매 프레임 변형)
+    const amp = dir===0 ? maxH/2 : maxH*0.92;
+    const yat=i=>{ let v=vals[i]; v = v<=0.20?0:(v-0.20)/0.80;
+      if(dir===0) return cy - ((i%2===0)?1:-1)*v*amp;
+      return baseY + dir*v*amp; };
+    strokeLine(n,xc,yat,col);
+  }
+  else if(P.style==="scroll"){
+    // 심전도 모니터: 고정 패턴이 우→좌로 흐름. 부드러운 패턴이라 크기 유지, 정수배라 무한루프.
+    const m=patScroll.length, DN=m;
+    const K=Math.max(1,Math.round(P.sec*1.2));
+    const off=(idx/nFrames)*m*K;
+    const amp = dir===0 ? maxH/2 : maxH*0.92;
+    const sx0=WPAD/2, sTot=W-WPAD;
+    const px=k=> sx0 + (k/(DN-1))*sTot;
+    const py=k=>{ let s=((k+off)%m+m)%m; const p=Math.floor(s), fr=s-p;
+      const v=patScroll[p]+(patScroll[(p+1)%m]-patScroll[p])*fr;  // signed -1..1
+      if(dir===0) return cy - v*amp;
+      return baseY + dir*Math.abs(v)*amp; };
+    const colk=k=>colorFor(Math.floor(k/DN*n), n, idx, nFrames);
+    strokeLine(DN,px,py,colk);
+  }
+  else if(P.style==="mirror"){
+    if(dir===0){
+      for(let i=0;i<n-1;i++){ ctx.strokeStyle=col(i);
+        ctx.beginPath(); ctx.moveTo(xc(i),cy-vals[i]*maxH/2); ctx.lineTo(xc(i+1),cy-vals[i+1]*maxH/2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(xc(i),cy+vals[i]*maxH/2); ctx.lineTo(xc(i+1),cy+vals[i+1]*maxH/2); ctx.stroke(); }
+    } else {
+      const y=i=> baseY + dir*vals[i]*(maxH*0.92);
+      strokeLine(n,xc,y,col);
+    }
+  }
+  else if(P.style==="area"){
+    if(dir===0){
+      if(P.mode==="solid"){
+        ctx.fillStyle=col(0); ctx.beginPath(); ctx.moveTo(xc(0),cy-vals[0]*maxH/2);
+        for(let i=1;i<n;i++) ctx.lineTo(xc(i),cy-vals[i]*maxH/2);
+        for(let i=n-1;i>=0;i--) ctx.lineTo(xc(i),cy+vals[i]*maxH/2);
+        ctx.closePath(); ctx.fill();
+      } else {
+        for(let i=0;i<n-1;i++){ ctx.fillStyle=col(i); ctx.beginPath();
+          ctx.moveTo(xc(i),cy-vals[i]*maxH/2); ctx.lineTo(xc(i+1),cy-vals[i+1]*maxH/2);
+          ctx.lineTo(xc(i+1),cy+vals[i+1]*maxH/2); ctx.lineTo(xc(i),cy+vals[i]*maxH/2);
+          ctx.closePath(); ctx.fill(); }
+      }
+    } else {
+      const yEnv=i=> baseY + dir*vals[i]*(maxH*0.92);
+      if(P.mode==="solid"){
+        ctx.fillStyle=col(0); ctx.beginPath(); ctx.moveTo(xc(0),baseY);
+        for(let i=0;i<n;i++) ctx.lineTo(xc(i),yEnv(i));
+        ctx.lineTo(xc(n-1),baseY); ctx.closePath(); ctx.fill();
+      } else {
+        for(let i=0;i<n-1;i++){ ctx.fillStyle=col(i); ctx.beginPath();
+          ctx.moveTo(xc(i),baseY); ctx.lineTo(xc(i),yEnv(i));
+          ctx.lineTo(xc(i+1),yEnv(i+1)); ctx.lineTo(xc(i+1),baseY); ctx.closePath(); ctx.fill(); }
+      }
+    }
+  }
+  requestAnimationFrame(draw);
+}
+
+// 이벤트
+["bars","bw","gap","h","fill","spk","spd","sec","fps","seed","color","color2","alpha","bg"]
+  .forEach(id=>$(id).addEventListener("input",rebuild));
+$("reseed").onclick=()=>{ seed.value=Math.floor(Math.random()*100000); rebuild(); };
+function applyFmt(){ $("fmtHint").querySelector(".hint").textContent=FMT_HINT[P.fmt]; }
+document.querySelectorAll("#fmtSeg button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll("#fmtSeg button").forEach(x=>x.classList.remove("on"));
+  b.classList.add("on"); P.fmt=b.dataset.fmt; applyFmt();
+});
+document.querySelectorAll("#styleSeg button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll("#styleSeg button").forEach(x=>x.classList.remove("on"));
+  b.classList.add("on"); P.style=b.dataset.style;
+});
+document.querySelectorAll("#anchorSeg button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll("#anchorSeg button").forEach(x=>x.classList.remove("on"));
+  b.classList.add("on"); P.anchor=b.dataset.anchor;
+});
+document.querySelectorAll("#modeSeg button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll("#modeSeg button").forEach(x=>x.classList.remove("on"));
+  b.classList.add("on"); P.mode=b.dataset.mode;
+  $("color2Row").style.display = P.mode==="gradient"?"block":"none";
+  $("colorRow").style.display  = P.mode==="rainbow"?"none":"block";
+  $("rainbowHint").style.display = P.mode==="rainbow"?"block":"none";
+  $("lbl_color").textContent = P.mode==="gradient"?"첫번째 색":"색";
+});
+
+// ===== 저장: 브라우저 MediaRecorder로 canvas 녹화 =====
+$("exportBtn").onclick=()=>{
+  const btn=$("exportBtn"), st=$("status");
+  if(typeof MediaRecorder==="undefined" || !cv.captureStream){
+    st.textContent="❌ 이 브라우저는 영상 녹화를 지원하지 않아요 (크롬 권장).";
+    return;
+  }
+  const mp4="video/mp4;codecs=avc1.42E01E", webm9="video/webm;codecs=vp9", webm="video/webm";
+  let mime;
+  if(P.fmt==="mp4" && MediaRecorder.isTypeSupported(mp4)) mime=mp4;
+  else if(MediaRecorder.isTypeSupported(webm9)) mime=webm9;
+  else mime=webm;
+  const ext = mime.indexOf("mp4")>=0 ? "mp4" : "webm";
+  btn.disabled=true;
+  st.textContent=(P.fmt==="mp4"&&ext!=="mp4" ? "MP4 미지원 → WebM으로 " : "")
+    + "녹화 중... "+P.sec.toFixed(1)+"초";
+  const stream=cv.captureStream(P.fps);
+  const rec=new MediaRecorder(stream,{mimeType:mime, videoBitsPerSecond:12000000});
+  const chunks=[];
+  rec.ondataavailable=e=>{ if(e.data && e.data.size) chunks.push(e.data); };
+  rec.onstop=()=>{
+    const blob=new Blob(chunks,{type:mime});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url; a.download=(($("fname").value||"waveform_loop")+"."+ext);
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    btn.disabled=false;
+    st.textContent="✅ 저장됨: "+a.download+"  ("+ (blob.size/1048576).toFixed(1) +"MB)";
+  };
+  rec.start();
+  // 정확히 한 루프(seconds)만 녹화 → 정수 사이클이라 시작=끝
+  setTimeout(()=>{ try{rec.stop();}catch(e){} }, P.sec*1000+150);
+};
+
+initUI(); rebuild(); applyFmt(); requestAnimationFrame(draw);
+</script>
+</body></html>
