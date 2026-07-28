@@ -26,17 +26,17 @@ export default function Dayflip() {
           <S.AppTitle>DayFlip — AI 감성 다이어리</S.AppTitle>
           <S.Developer>
             SIMPRAWORLD
-            <S.AdBadge>· 광고 포함 · 인앱 구매</S.AdBadge>
+            <S.AdBadge>· 인앱 구매</S.AdBadge>
           </S.Developer>
 
           <S.MetaRow>
             <S.MetaItem>
               <S.MetaValue><S.Star>★</S.Star> 5점 희망</S.MetaValue>
-              <S.MetaLabel>리뷰 (체험판)</S.MetaLabel>
+              <S.MetaLabel>리뷰</S.MetaLabel>
             </S.MetaItem>
             <S.MetaItem>
-              <S.MetaValue>Beta</S.MetaValue>
-              <S.MetaLabel>사전 체험판</S.MetaLabel>
+              <S.MetaValue>무료</S.MetaValue>
+              <S.MetaLabel>Google Play</S.MetaLabel>
             </S.MetaItem>
             <S.MetaItem>
               <S.MetaValue>3세 이상</S.MetaValue>
@@ -45,12 +45,14 @@ export default function Dayflip() {
           </S.MetaRow>
 
           <S.ActionRow>
-            <S.InstallBtn as="button" type="button" disabled aria-disabled="true">
-              사전 체험 진행중이에요!
+            <S.InstallBtn
+              href="https://play.google.com/store/apps/details?id=com.simpraworld.dayflip&hl=ko"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Google Play에서 다운로드
             </S.InstallBtn>
           </S.ActionRow>
-
-          <S.DeviceNote>* 현재 Google Play 사전 체험판으로 운영 중입니다. 검색에는 노출되지 않으며, 체험을 희망하시면 support@simpra.com 으로 문의 부탁드립니다.</S.DeviceNote>
         </S.HeaderLeft>
 
         <S.HeaderRight>
@@ -136,8 +138,8 @@ export default function Dayflip() {
         <S.InfoGrid>
           <S.InfoBox>
             <S.InfoTitle>VERSION</S.InfoTitle>
-            <S.InfoValue>1.1.1 (Beta)</S.InfoValue>
-            <S.InfoSub>사전 체험판</S.InfoSub>
+            <S.InfoValue>1.1.1</S.InfoValue>
+            <S.InfoSub>Google Play 정식 출시</S.InfoSub>
           </S.InfoBox>
           <S.InfoBox>
             <S.InfoTitle>AGE RATING</S.InfoTitle>

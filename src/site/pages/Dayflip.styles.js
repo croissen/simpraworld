@@ -321,10 +321,12 @@ export const InfoValue = styled.p`
   font-size: 15px;
   color: ${theme.text};
   font-weight: 500;
+  overflow-wrap: anywhere;
 `
 
 export const InfoSub = styled.p`
   font-size: 12px;
   color: ${theme.text3};
   margin-top: 0.25rem;
+  overflow-wrap: anywhere;
 `

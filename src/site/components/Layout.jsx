@@ -1,4 +1,4 @@
-import { Outlet, useLocation } from 'react-router-dom'
+import { Outlet, useLocation, Link } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import * as S from './Layout.styles'
 
@@ -6,7 +6,25 @@ const NAV = [
   { to: '/', label: 'Home', end: true },
   { to: '/about', label: 'About', end: true },
   { to: '/dayflip', label: 'DayFlip', end: true },
+  { to: '/hexapoppop', label: 'HexaPopPop!', end: true },
 ]
+
+// "Other" 드롭다운 — 내가 만든 나머지 사이트/도구 모음.
+//   kind:'route'    → 같은 앱의 SPA 라우트 (react-router Link)
+//   kind:'page'     → public/의 정적 HTML (전체 페이지 이동)
+//   kind:'external' → 외부 사이트 (새 탭)
+// ↓ 새 사이트는 여기 한 줄만 추가하면 데스크탑·모바일 양쪽에 반영됨.
+const OTHER = [
+  { label: '심프라 유니버스', to: '/my-universe', kind: 'route' },
+  { label: '웨이브폼 메이커', to: '/waveform-maker.html', kind: 'page' },
+]
+
+// kind에 맞는 앵커 props 생성
+function otherProps(it) {
+  if (it.kind === 'route') return { as: Link, to: it.to }
+  if (it.kind === 'external') return { href: it.to, target: '_blank', rel: 'noreferrer' }
+  return { href: it.to } // page
+}
 
 export default function Layout() {
   const location = useLocation()
@@ -46,6 +64,18 @@ export default function Layout() {
               {it.label}
             </S.NavItem>
           ))}
+          <S.OtherWrap>
+            <S.OtherBtn type="button">
+              Other <span className="car">▾</span>
+            </S.OtherBtn>
+            <S.OtherPanel>
+              {OTHER.map((it) => (
+                <S.OtherItem key={it.label} {...otherProps(it)}>
+                  {it.label}
+                </S.OtherItem>
+              ))}
+            </S.OtherPanel>
+          </S.OtherWrap>
         </S.NavLinks>
 
         <S.MobileNav>
@@ -61,6 +91,13 @@ export default function Layout() {
                   <S.MobileItem key={it.to} to={it.to} end={it.end} onClick={() => setMenuOpen(false)}>
                     {it.label}
                   </S.MobileItem>
+                ))}
+                <S.MobileDivider />
+                <S.MobileSubLabel>OTHER</S.MobileSubLabel>
+                {OTHER.map((it) => (
+                  <S.MobileSubItem key={it.label} {...otherProps(it)} onClick={() => setMenuOpen(false)}>
+                    {it.label}
+                  </S.MobileSubItem>
                 ))}
               </S.MobileMenu>
             </>

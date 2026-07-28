@@ -7,6 +7,9 @@ import About from './site/pages/About'
 import Dayflip from './site/pages/Dayflip'
 import DayflipPolicy from './site/pages/DayflipPolicy'
 import DayflipData from './site/pages/DayflipData'
+import Hexapoppop from './site/pages/Hexapoppop'
+import HexapoppopPolicy from './site/pages/HexapoppopPolicy'
+import HexapoppopTerms from './site/pages/HexapoppopTerms'
 
 // 캔버스 앱은 무거우니 /my-universe 진입 때만 로드(code-split)
 const Universe = lazy(() => import('./App'))
@@ -31,9 +34,12 @@ export default function Root() {
             <Route path="/" element={<Landing />} />
             <Route path="/about" element={<About />} />
             <Route path="/dayflip" element={<Dayflip />} />
+            <Route path="/hexapoppop" element={<Hexapoppop />} />
           </Route>
           <Route path="/dayflip/policy" element={<DayflipPolicy />} />
           <Route path="/dayflip/data" element={<DayflipData />} />
+          <Route path="/hexapoppop/policy" element={<HexapoppopPolicy />} />
+          <Route path="/hexapoppop/terms" element={<HexapoppopTerms />} />
         </Route>
         <Route
           path="/my-universe"
