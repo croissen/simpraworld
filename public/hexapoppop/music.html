@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ko" translate="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hexa PopPop! — Music</title>
+<style>
+  :root{ --bg:#1a1140; --bg2:#241a52; --card:#2c2160; --line:#3d2f7a; --tx:#efeaff; --dim:#b3a7e6; --acc:#8b6cff; --gold:#ffd43b; }
+  *{ box-sizing:border-box; margin:0; }
+  body{ font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; color:var(--tx);
+        background:radial-gradient(120% 100% at 50% 0%, var(--bg2), var(--bg)); min-height:100vh;
+        padding:calc(env(safe-area-inset-top) + 28px) 16px calc(env(safe-area-inset-bottom) + 40px); }
+  .wrap{ max-width:680px; margin:0 auto; }
+  h1{ font-size:26px; letter-spacing:.5px; display:flex; align-items:center; gap:10px; }
+  .sub{ color:var(--dim); font-size:13px; margin:8px 0 22px; line-height:1.5; }
+  .list{ display:flex; flex-direction:column; gap:12px; }
+  .song{ background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px 16px;
+         display:flex; align-items:center; gap:14px; }
+  .art{ width:46px; height:46px; border-radius:12px; flex:0 0 auto; display:grid; place-items:center;
+        font-size:22px; background:linear-gradient(135deg,#5b3fd6,#8b6cff); }
+  .meta{ flex:1 1 auto; min-width:0; }
+  .ttl{ font-size:16px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .art2{ color:var(--dim); font-size:13px; margin-top:2px; }
+  .tags{ display:flex; gap:8px; margin-top:6px; flex-wrap:wrap; }
+  .tag{ font-size:11px; color:var(--dim); background:#0003; border:1px solid var(--line); border-radius:999px; padding:2px 8px; }
+  .tag.ad{ color:var(--gold); border-color:#5a4a1e; }
+  .tag.free{ color:#7ee08a; border-color:#245a2e; }
+  audio{ height:34px; }
+  .empty{ text-align:center; color:var(--dim); padding:48px 12px; border:1px dashed var(--line); border-radius:16px; line-height:1.7; }
+  .foot{ color:var(--dim); font-size:12px; margin-top:26px; line-height:1.6; text-align:center; }
+  a{ color:var(--acc); }
+  code{ background:#0004; padding:1px 6px; border-radius:6px; font-size:12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎵 Hexa PopPop! Music</h1>
+  <p class="sub">게임 안 음악 목록은 이 페이지와 <b>같은 <code>songs.json</code></b>을 실시간으로 읽습니다.
+     여기에 보이는 곡이 곧 게임에서 받을 수 있는 곡입니다.</p>
+  <div id="list" class="list"></div>
+  <p class="foot" id="foot"></p>
+</div>
+<script>
+(function(){
+  var listEl=document.getElementById('list'), footEl=document.getElementById('foot');
+  function fmtSize(b){ if(!b) return ''; return (b/1048576).toFixed(1)+'MB'; }
+  function fmtDur(s){ if(!s) return ''; var m=Math.floor(s/60), r=Math.round(s%60); return m+':'+(r<10?'0':'')+r; }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  fetch('./songs.json?t='+Date.now()).then(function(r){ return r.json(); }).then(function(d){
+    var songs=(d&&d.songs)||[];
+    if(!songs.length){
+      listEl.innerHTML='<div class="empty">아직 등록된 곡이 없어요.<br>'
+        +'<code>public/hexapoppop/songs/</code>에 mp3를 넣고 <code>songs.json</code>에 추가한 뒤 <code>npm run deploy</code>.</div>';
+    } else {
+      listEl.innerHTML=songs.map(function(s){
+        var url=new URL(s.file, location.href).href;
+        var ad=(s.ad===false)?'<span class="tag free">무료 다운로드</span>':'<span class="tag ad">광고 보고 받기</span>';
+        var dur=fmtDur(s.duration), sz=fmtSize(s.size);
+        return '<div class="song">'
+          +'<div class="art">🍬</div>'
+          +'<div class="meta">'
+            +'<div class="ttl">'+esc(s.title||s.id)+'</div>'
+            +(s.artist?'<div class="art2">'+esc(s.artist)+'</div>':'')
+            +'<div class="tags">'+ad
+              +(dur?'<span class="tag">'+dur+'</span>':'')
+              +(sz?'<span class="tag">'+sz+'</span>':'')
+            +'</div>'
+          +'</div>'
+          +'<audio controls preload="none" src="'+esc(url)+'"></audio>'
+        +'</div>';
+      }).join('');
+    }
+    footEl.textContent='총 '+songs.length+'곡 · 매니페스트 v'+((d&&d.version)||'?')+(d&&d.updated?' · '+d.updated:'');
+  }).catch(function(e){
+    listEl.innerHTML='<div class="empty">songs.json을 불러오지 못했습니다.<br>'+esc(e.message||e)+'</div>';
+  });
+})();
+</script>
+</body>
+</html>
