@@ -134,6 +134,23 @@ export interface SEdge {
   bold?: boolean // 강조: 더 굵게
 }
 
+/**
+ * 잉크 획 = 캔버스 위 자유 필기(펜/손가락) 한 번의 선.
+ * 노드/배치와 별개(재사용·다중배치 안 함). 공간(space)에 고정된 월드좌표 점열.
+ * pts = 평탄화된 월드좌표 [x0,y0,x1,y1,…] → 카메라 팬/줌 따라 같이 움직이고, 저장·되돌리기에 함께 실림.
+ */
+export type InkKind = 'pen' | 'highlighter' | 'pencil' // 펜=선명 / 형광펜=반투명·굵게 / 연필=살짝 흐리게
+
+export interface InkStroke {
+  id: string
+  space: string | null // 그려진 공간(폴더 node id, null=최상위). 그 공간에서만 보임.
+  pts: number[] // 월드좌표 평탄 배열 [x0,y0,x1,y1,…]
+  color: string
+  width: number // 굵기(월드 단위)
+  kind?: InkKind // 없으면 'pen'으로 취급(구버전 호환)
+  updatedAt: number
+}
+
 export interface SimpraWorldDoc {
   version: string
   user_id: string | null
@@ -141,6 +158,7 @@ export interface SimpraWorldDoc {
   nodes: SNode[]
   placements: Placement[]
   edges: SEdge[]
+  strokes?: InkStroke[] // 자유 필기(펜) 획들. 없으면 빈 것으로 취급(구버전 문서 호환).
   assets: Asset[]
   components: ComponentDef[]
   groups?: Record<string, { rot: number }> // 그룹별 누적 회전각(도) → 선택 박스가 회전 따라 안정적으로 감쌈

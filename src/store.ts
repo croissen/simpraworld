@@ -1,6 +1,6 @@
 import { get, set } from 'idb-keyval'
 import { DEFAULT_BG, emptyDoc, uid } from './types'
-import type { Asset, ComponentDef, Frame, NodeType, Placement, SEdge, Shape, SimpraWorldDoc, SNode, SpaceItem } from './types'
+import type { Asset, ComponentDef, Frame, InkKind, InkStroke, NodeType, Placement, SEdge, Shape, SimpraWorldDoc, SNode, SpaceItem } from './types'
 import { makeSampleWorld } from './sampleWorld'
 import { measureTextNode, wrappedHeight } from './textMeasure'
 
@@ -130,6 +130,8 @@ function applyDocSnapshot(json: string) {
   selection = new Set([...selection].filter((pid) => livePids.has(pid)))
   const liveNodes = new Set(doc.nodes.map((n) => n.id))
   spacePath = spacePath.filter((id) => liveNodes.has(id))
+  const liveStrokes = new Set((doc.strokes ?? []).map((s) => s.id))
+  selectedStrokeIds = new Set([...selectedStrokeIds].filter((id) => liveStrokes.has(id)))
   version += 1
   dirty = true // undo/redo도 저장된 상태와 달라짐
   markDirty()
@@ -333,7 +335,8 @@ export const markSaved = () => {
 /** 마지막 저장/열기 이후 내용 변경이 있었는지. */
 export const isDirty = () => dirty
 /** 저장할 가치가 있는 미저장 작업이 있는지(변경됨 + 내용 비어있지 않음). New/Load 전 확인용. */
-export const hasUnsavedWork = () => dirty && (doc.nodes.length > 0 || doc.components.length > 0)
+export const hasUnsavedWork = () =>
+  dirty && (doc.nodes.length > 0 || doc.components.length > 0 || (doc.strokes?.length ?? 0) > 0)
 export function setUniverseName(name: string) {
   doc.universeName = name.trim() || 'My Universe'
   changed()
@@ -409,6 +412,7 @@ let drawTool: Shape | null = null
 export const getDrawTool = () => drawTool
 export function setDrawTool(s: Shape | null) {
   drawTool = s
+  if (s) inkMode = null // 도형 그리기 켜면 펜/지우개는 끔(상호배타)
   bumpUI()
 }
 
@@ -441,6 +445,285 @@ export function cancelDrawNode(nodeId: string, pid: string) {
   selection = new Set()
   bumpUI()
   markDirty()
+}
+
+// ── 잉크(펜 필기) ─────────────────────────────────────────────
+// 갤노트/아이폰 노트식 자유 필기. 펜을 켜면 캔버스 드래그가 획이 되고, 지우개면
+// 닿는 획을 지운다. 획은 현재 공간(space)에 고정된 월드좌표 점열 → doc.strokes에 저장
+// (save/열기/되돌리기에 자동 포함). 한 번 켜면 계속 쓸 수 있음(도형툴처럼 1회성 아님).
+// 그리기(펜/형광펜/연필) + 도구(지우개 2종·올가미). null=필기 꺼짐.
+export type InkMode = InkKind | 'eraser' | 'erasePart' | 'lasso' | null
+const DRAW_KINDS = new Set<InkMode>(['pen', 'highlighter', 'pencil'])
+export const isDrawKind = (m: InkMode): m is InkKind => DRAW_KINDS.has(m)
+
+let inkMode: InkMode = null
+let lastEraser: 'eraser' | 'erasePart' = 'eraser' // 마지막에 고른 지우개 종류(우클릭 임시지우개용)
+export const getLastEraser = () => lastEraser
+let penColor = '#ff4d6d' // 펜 색
+let hlColor = '#ffe600' // 형광펜 색(기본 노랑)
+let penWidth = 3 // 펜 굵기(월드 단위)
+let hlWidth = 20 // 형광펜 굵기(기본 두껍게 — 밴드처럼)
+
+// 최근 사용색(로컬 저장, 최신 우선 최대 8) — 문서가 아니라 사용자 취향
+const RECENT_KEY = 'simpra:recentColors'
+let recentColors: string[] = loadRecentColors()
+function loadRecentColors(): string[] {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(RECENT_KEY) : null
+    const arr = raw ? JSON.parse(raw) : []
+    return Array.isArray(arr) ? arr.filter((x) => typeof x === 'string').slice(0, 8) : []
+  } catch {
+    return []
+  }
+}
+export const getRecentColors = () => recentColors
+function pushRecentColor(c: string) {
+  const lc = c.toLowerCase()
+  recentColors = [c, ...recentColors.filter((x) => x.toLowerCase() !== lc)].slice(0, 8)
+  try {
+    localStorage.setItem(RECENT_KEY, JSON.stringify(recentColors))
+  } catch {
+    /* 사생활 모드 등 localStorage 불가 → 최근색은 이 세션만 유지 */
+  }
+}
+
+export const getInkMode = () => inkMode
+export function setInkMode(m: InkMode) {
+  inkMode = inkMode === m ? null : m // 같은 도구 다시 누르면 끄기(토글)
+  if (inkMode === 'eraser' || inkMode === 'erasePart') lastEraser = inkMode // 우클릭 임시지우개가 쓸 종류 기억
+  if (inkMode) {
+    drawTool = null // 도형 그리기 도구와 겹치지 않게
+    selection = new Set() // 필기 중엔 노드 선택 해제(오조작 방지)
+  }
+  if (inkMode !== 'lasso') clearStrokeSelection() // 올가미 벗어나면 필기 선택 해제
+  markDirty() // 캔버스 커서/오버레이 즉시 갱신
+  bumpUI()
+}
+// 활성 도구의 색: 형광펜이면 형광펜 색, 그 외엔 펜 색.
+export const getInkColor = () => (inkMode === 'highlighter' ? hlColor : penColor)
+export function setInkColor(c: string) {
+  if (inkMode === 'highlighter') hlColor = c
+  else penColor = c
+  bumpUI()
+}
+// (하위호환) 예전 이름 — 캔버스가 쓰는 색 게터
+export const getPenColor = getInkColor
+/** 최근색 등록: 색을 고를 때가 아니라 '최소화' 시점에 현재색을 최근 목록에 넣음. */
+export function commitRecentColor() {
+  pushRecentColor(getInkColor())
+  bumpUI()
+}
+// 활성 도구 굵기: 형광펜이면 형광펜 굵기, 그 외엔 펜 굵기.
+export const getInkWidth = () => (inkMode === 'highlighter' ? hlWidth : penWidth)
+export function setInkWidth(w: number) {
+  const v = Math.max(1, Math.min(80, Math.round(w)))
+  if (inkMode === 'highlighter') hlWidth = v
+  else penWidth = v
+  bumpUI()
+}
+// (하위호환) 예전 이름 — 캔버스가 쓰는 굵기 게터
+export const getPenWidth = getInkWidth
+export const setPenWidth = setInkWidth
+
+/** 현재 공간에서 보이는 획들(렌더용). */
+export const strokesInCurrentSpace = (): InkStroke[] => {
+  const space = getCurrentSpace()
+  return (doc.strokes ?? []).filter((s) => s.space === space)
+}
+
+/** 한 획 확정: 월드좌표 점열(pts) → 히스토리 1스텝 + 저장. 점이 2개(4값) 미만이면 무시. */
+export function addStroke(pts: number[], color: string, width: number, kind: InkKind = 'pen') {
+  if (pts.length < 2) return
+  const stroke: InkStroke = {
+    id: uid('ink'),
+    space: getCurrentSpace(),
+    pts,
+    color,
+    width,
+    kind,
+    updatedAt: Date.now(),
+  }
+  if (!doc.strokes) doc.strokes = []
+  doc.strokes.push(stroke)
+  changed() // 되돌리기 1스텝 + 저장 + UI 알림
+}
+
+/** 점(px,py)이 획의 어느 선분에라도 tol 이내로 닿는지(획 전체 지우개 히트). */
+function strokeHitsPoint(s: InkStroke, px: number, py: number, tol: number): boolean {
+  const p = s.pts
+  if (p.length === 2) return Math.hypot(px - p[0], py - p[1]) <= tol // 점 하나짜리 획
+  for (let i = 0; i + 3 < p.length; i += 2) {
+    if (distToSeg(px, py, p[i], p[i + 1], p[i + 2], p[i + 3]) <= tol) return true
+  }
+  return false
+}
+function distToSeg(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const dx = bx - ax
+  const dy = by - ay
+  const len2 = dx * dx + dy * dy
+  if (len2 === 0) return Math.hypot(px - ax, py - ay)
+  let t = ((px - ax) * dx + (py - ay) * dy) / len2
+  t = Math.max(0, Math.min(1, t))
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+}
+
+/**
+ * 획 지우개(라이브): (wx,wy) 반경 r(월드) 안에 닿는 획을 통째로 제거.
+ * 드래그 중엔 히스토리 없이 markDirty만(손 뗄 때 commitStrokes로 1스텝 확정). 지웠으면 true.
+ */
+export function eraseStrokesNear(wx: number, wy: number, r: number): boolean {
+  const strokes = doc.strokes
+  if (!strokes || !strokes.length) return false
+  const space = getCurrentSpace()
+  let removed = false
+  const keep: InkStroke[] = []
+  for (const s of strokes) {
+    if (s.space === space && strokeHitsPoint(s, wx, wy, r + s.width / 2)) {
+      removed = true // 이 획은 버림
+    } else {
+      keep.push(s)
+    }
+  }
+  if (removed) {
+    doc.strokes = keep
+    markDirty()
+  }
+  return removed
+}
+
+/**
+ * 부분 지우개(그림판식, 라이브): 반경 r 안에 든 점만 지우고, 살아남은 구간을 각각의 획으로 쪼갬.
+ * (획이 촘촘히 샘플링돼 있어 점 단위 제거로도 매끄럽게 지워짐.) 변화 있었으면 true.
+ */
+export function erasePartNear(wx: number, wy: number, r: number): boolean {
+  const strokes = doc.strokes
+  if (!strokes || !strokes.length) return false
+  const space = getCurrentSpace()
+  let changedAny = false
+  const out: InkStroke[] = []
+  for (const s of strokes) {
+    if (s.space !== space) {
+      out.push(s)
+      continue
+    }
+    const tol = r + s.width / 2
+    const p = s.pts
+    const runs: number[][] = []
+    let cur: number[] = []
+    for (let i = 0; i < p.length; i += 2) {
+      if (Math.hypot(p[i] - wx, p[i + 1] - wy) <= tol) {
+        if (cur.length >= 2) runs.push(cur) // 지워진 점에서 구간 끊김
+        cur = []
+      } else {
+        cur.push(p[i], p[i + 1])
+      }
+    }
+    if (cur.length >= 2) runs.push(cur)
+    if (runs.length === 1 && runs[0].length === p.length) {
+      out.push(s) // 변화 없음
+    } else {
+      changedAny = true
+      for (const run of runs) out.push({ ...s, id: uid('ink'), pts: run, updatedAt: Date.now() })
+      // 남은 구간이 없으면(전부 지워짐) 아무것도 안 넣음 = 삭제
+    }
+  }
+  if (changedAny) {
+    doc.strokes = out
+    markDirty()
+  }
+  return changedAny
+}
+
+/** 지우개/이동 드래그 확정: 되돌리기 1스텝 + 저장. */
+export function commitStrokes() {
+  changed()
+}
+
+// ── 올가미: 필기 영역을 골라 이동/삭제 ────────────────────────
+let selectedStrokeIds = new Set<string>()
+export const getSelectedStrokeIds = () => selectedStrokeIds
+export const hasStrokeSelection = () => selectedStrokeIds.size > 0
+export function clearStrokeSelection() {
+  if (selectedStrokeIds.size) {
+    selectedStrokeIds = new Set()
+    markDirty()
+    bumpUI()
+  }
+}
+
+/** 점이 다각형(평탄 배열) 내부인지 — ray casting. */
+function pointInPoly(x: number, y: number, poly: number[]): boolean {
+  let inside = false
+  const n = poly.length / 2
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const xi = poly[i * 2]
+    const yi = poly[i * 2 + 1]
+    const xj = poly[j * 2]
+    const yj = poly[j * 2 + 1]
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside
+  }
+  return inside
+}
+
+/** 올가미 폴리곤(월드) 안의 획 선택 — 점 과반이 안에 들면 선택. */
+export function lassoSelectStrokes(poly: number[]): void {
+  const space = getCurrentSpace()
+  const sel = new Set<string>()
+  if (poly.length >= 6) {
+    for (const s of doc.strokes ?? []) {
+      if (s.space !== space) continue
+      let inside = 0
+      const total = s.pts.length / 2
+      for (let i = 0; i < s.pts.length; i += 2)
+        if (pointInPoly(s.pts[i], s.pts[i + 1], poly)) inside++
+      if (total && inside / total >= 0.5) sel.add(s.id)
+    }
+  }
+  selectedStrokeIds = sel
+  markDirty()
+  bumpUI()
+}
+
+/** 선택 획들의 월드 경계 박스(굵기 반영). 없으면 null. */
+export function selectedStrokesBBox(): { x0: number; y0: number; x1: number; y1: number } | null {
+  if (!selectedStrokeIds.size) return null
+  let x0 = Infinity
+  let y0 = Infinity
+  let x1 = -Infinity
+  let y1 = -Infinity
+  for (const s of doc.strokes ?? []) {
+    if (!selectedStrokeIds.has(s.id)) continue
+    const hw = s.width / 2
+    for (let i = 0; i < s.pts.length; i += 2) {
+      x0 = Math.min(x0, s.pts[i] - hw)
+      x1 = Math.max(x1, s.pts[i] + hw)
+      y0 = Math.min(y0, s.pts[i + 1] - hw)
+      y1 = Math.max(y1, s.pts[i + 1] + hw)
+    }
+  }
+  return x0 <= x1 ? { x0, y0, x1, y1 } : null
+}
+
+/** 선택 획들을 (dx,dy)만큼 이동(라이브, 히스토리 없음). */
+export function moveSelectedStrokesBy(dx: number, dy: number): void {
+  if (!selectedStrokeIds.size) return
+  for (const s of doc.strokes ?? []) {
+    if (!selectedStrokeIds.has(s.id)) continue
+    for (let i = 0; i < s.pts.length; i += 2) {
+      s.pts[i] += dx
+      s.pts[i + 1] += dy
+    }
+    s.updatedAt = Date.now()
+  }
+  markDirty()
+}
+
+/** 선택 획 삭제(되돌리기 1스텝 + 저장). */
+export function deleteSelectedStrokes(): void {
+  if (!selectedStrokeIds.size || !doc.strokes) return
+  doc.strokes = doc.strokes.filter((s) => !selectedStrokeIds.has(s.id))
+  selectedStrokeIds = new Set()
+  changed()
 }
 
 export const getSelectedComponentId = () => selectedComponentId

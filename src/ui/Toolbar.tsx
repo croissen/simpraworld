@@ -4,6 +4,8 @@ import {
   addText,
   canRedo,
   canUndo,
+  getInkMode,
+  setInkMode,
   setDrawTool,
   getCamera,
   getComponentsOpen,
@@ -38,6 +40,7 @@ import ConfirmModal from './ConfirmModal'
 import PromptModal from './PromptModal'
 import OverflowMenu from './OverflowMenu'
 import ShapePicker from './ShapePicker'
+import PenPalette from './PenPalette'
 import * as S from './Toolbar.styles'
 
 export default function Toolbar() {
@@ -181,6 +184,15 @@ export default function Toolbar() {
           onClose={() => setPickShape(false)}
         />
       )}
+      {/* ✎ 펜: 누르면 바로 필기 모드 진입(플로팅 팔레트). 다시 누르면 완전 종료. */}
+      <S.Button
+        $on={!!getInkMode()}
+        onClick={() => setInkMode(getInkMode() ? null : 'pen')}
+        title="Draw — write freely with finger or mouse (press again to turn off)"
+      >
+        ✎
+      </S.Button>
+      {getInkMode() && <PenPalette />}
       {/* 📄 메뉴: 보기 패널 (기본 닫힘) */}
       <OverflowMenu
         label="📁"

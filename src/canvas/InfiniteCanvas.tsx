@@ -14,6 +14,23 @@ import {
   addGroupRotLive,
   finishSpine,
   getDrawTool,
+  getInkMode,
+  isDrawKind,
+  getLastEraser,
+  getPenColor,
+  getPenWidth,
+  addStroke,
+  eraseStrokesNear,
+  erasePartNear,
+  commitStrokes,
+  strokesInCurrentSpace,
+  setInkMode,
+  lassoSelectStrokes,
+  selectedStrokesBBox,
+  moveSelectedStrokesBy,
+  deleteSelectedStrokes,
+  clearStrokeSelection,
+  getSelectedStrokeIds,
   getSpineWizard,
   groupOBB,
   groupScaleSnapshot,
@@ -174,6 +191,12 @@ export default function InfiniteCanvas() {
       if (getShowGrid()) drawGrid(W, H)
       if (getShowFrame()) drawFrame()
 
+      // 펜/지우개 모드일 땐 커서를 십자선으로(팬(Space) 중이면 grab 우선)
+      if (!spaceHeld) {
+        const im = getInkMode()
+        canvas.style.cursor = im ? 'crosshair' : ''
+      }
+
       const items = itemsInCurrentSpace()
       // 엣지는 배치(placement) 단위. 각 배치는 고유 pid → 같은 노드 복사본끼리도 참조선이 따로.
       // z순서(=items 인덱스). 엣지는 두 끝점 중 "아래에 있는 쪽" 바로 뒤에 깐다 →
@@ -296,6 +319,126 @@ export default function InfiniteCanvas() {
           ctx.textBaseline = 'bottom'
           ctx.fillText('Swap data', p.x, p.y - hh - 12)
         }
+      }
+
+      // ── 잉크 획: 노드 위에 얹어 그림(주석처럼). 중점 스무딩 + 펜 종류별 질감. ──
+      const paintStroke = (pts: number[], color: string, width: number, kind?: string) => {
+        if (pts.length < 2) return
+        const lw = Math.max(1, width * c.zoom)
+        ctx.save()
+        // 형광펜=반투명·평평한 끝 / 연필=살짝 흐리게 / 펜=선명
+        if (kind === 'highlighter') {
+          ctx.globalAlpha = 0.4
+          ctx.lineCap = 'butt'
+        } else {
+          ctx.globalAlpha = kind === 'pencil' ? 0.85 : 1
+          ctx.lineCap = 'round'
+        }
+        ctx.lineJoin = 'round'
+        if (pts.length === 2) {
+          const q = w2s(pts[0], pts[1]) // 점 하나(톡) = 작은 원점
+          ctx.fillStyle = color
+          ctx.beginPath()
+          ctx.arc(q.x, q.y, lw / 2, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.restore()
+          return
+        }
+        ctx.strokeStyle = color
+        ctx.lineWidth = lw
+        ctx.beginPath()
+        const first = w2s(pts[0], pts[1])
+        ctx.moveTo(first.x, first.y)
+        // 각 점을 제어점으로, 이웃 중점까지 2차 베지어 → 꺾임 없이 부드럽게
+        const n = pts.length / 2
+        for (let i = 1; i < n - 1; i++) {
+          const cur = w2s(pts[i * 2], pts[i * 2 + 1])
+          const nx = w2s(pts[(i + 1) * 2], pts[(i + 1) * 2 + 1])
+          ctx.quadraticCurveTo(cur.x, cur.y, (cur.x + nx.x) / 2, (cur.y + nx.y) / 2)
+        }
+        const last = w2s(pts[(n - 1) * 2], pts[(n - 1) * 2 + 1])
+        ctx.lineTo(last.x, last.y)
+        ctx.stroke()
+        ctx.restore()
+      }
+      const selStrokes = getSelectedStrokeIds()
+      const curStrokes = strokesInCurrentSpace()
+      for (const s of curStrokes) paintStroke(s.pts, s.color, s.width, s.kind)
+      // 그리는 중인 획(아직 미확정)도 실시간으로
+      const liveKind = getInkMode()
+      if (mode === 'ink' && isDrawKind(liveKind) && inkPts.length >= 2)
+        paintStroke(inkPts, getPenColor(), getPenWidth(), liveKind)
+      // 올가미로 선택된 획: 초록 하이라이트(윤곽)
+      if (selStrokes.size) {
+        for (const s of curStrokes) {
+          if (!selStrokes.has(s.id)) continue
+          ctx.save()
+          ctx.globalAlpha = 0.35
+          ctx.strokeStyle = '#3ddc7f'
+          ctx.lineWidth = Math.max(1, s.width * c.zoom) + 6
+          ctx.lineCap = 'round'
+          ctx.lineJoin = 'round'
+          ctx.beginPath()
+          const f = w2s(s.pts[0], s.pts[1])
+          ctx.moveTo(f.x, f.y)
+          for (let i = 2; i < s.pts.length; i += 2) {
+            const q = w2s(s.pts[i], s.pts[i + 1])
+            ctx.lineTo(q.x, q.y)
+          }
+          ctx.stroke()
+          ctx.restore()
+        }
+        // 선택 경계 박스(점선) + 우상단 삭제 버튼
+        const bb = selectedStrokesBBox()
+        if (bb) {
+          const tl = w2s(bb.x0, bb.y0)
+          const br = w2s(bb.x1, bb.y1)
+          ctx.strokeStyle = '#3ddc7f'
+          ctx.lineWidth = 1.5
+          ctx.setLineDash([6, 4])
+          ctx.strokeRect(tl.x - 4, tl.y - 4, br.x - tl.x + 8, br.y - tl.y + 8)
+          ctx.setLineDash([])
+          // 삭제 버튼(빨간 원 + ×) — 박스 우상단. onDown 히트영역과 좌표 일치.
+          const trx = br.x + 16
+          const trY = tl.y - 16
+          ctx.beginPath()
+          ctx.arc(trx, trY, 13, 0, Math.PI * 2)
+          ctx.fillStyle = '#e5484d'
+          ctx.fill()
+          ctx.strokeStyle = '#fff'
+          ctx.lineWidth = 2
+          ctx.beginPath()
+          ctx.moveTo(trx - 4, trY - 4)
+          ctx.lineTo(trx + 4, trY + 4)
+          ctx.moveTo(trx + 4, trY - 4)
+          ctx.lineTo(trx - 4, trY + 4)
+          ctx.stroke()
+        }
+      }
+      // 올가미 그리는 중: 점선 폴리곤
+      if (mode === 'lasso' && lassoPts.length >= 4) {
+        ctx.strokeStyle = 'rgba(61,220,127,0.9)'
+        ctx.lineWidth = 1.5
+        ctx.setLineDash([5, 4])
+        ctx.beginPath()
+        const f = w2s(lassoPts[0], lassoPts[1])
+        ctx.moveTo(f.x, f.y)
+        for (let i = 2; i < lassoPts.length; i += 2) {
+          const q = w2s(lassoPts[i], lassoPts[i + 1])
+          ctx.lineTo(q.x, q.y)
+        }
+        ctx.stroke() // 끌고 온 자취만 그림(끝↔시작 잇는 선은 안 그림 — 선택은 내부적으로 자동 닫힘)
+        ctx.setLineDash([])
+      }
+      // 지우개 커서(반경 링) — 지우개 도구 또는 우클릭 임시 지우개 중
+      if ((getInkMode() === 'eraser' || getInkMode() === 'erasePart' || rightErase) && inkCursor) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.85)'
+        ctx.lineWidth = 1.5
+        ctx.setLineDash([4, 3])
+        ctx.beginPath()
+        ctx.arc(inkCursor.x, inkCursor.y, ERASER_PX, 0, Math.PI * 2)
+        ctx.stroke()
+        ctx.setLineDash([])
       }
 
       // 그룹 선택: OBB(회전 따라 도는 안정 박스) + 코너(크기조절) + 회전/관절
@@ -840,12 +983,29 @@ export default function InfiniteCanvas() {
       | 'resize'
       | 'rotate'
       | 'draw'
+      | 'ink'
+      | 'lasso'
+      | 'lassomove'
       | 'lineedit'
       | 'jointrotate'
       | 'groupresize' = 'none'
     // 도형 그리기: 방금 만든 도형 + 드래그 시작점(월드)
     let drawOp: { nodeId: string; pid: string; tool: Shape; startX: number; startY: number } | null =
       null
+    // 잉크(펜 필기): 진행 중 획의 월드좌표 점열 [x0,y0,x1,y1,…] / 지우개로 뭔가 지웠는지 / 지우개 커서(화면)
+    let inkPts: number[] = []
+    let inkErasedAny = false
+    let inkCursor: { x: number; y: number } | null = null
+    // 터치로 그릴 때: 손가락이 살짝 움직이기 전까진 획을 '대기'(월드 시작점만 보관).
+    // 그 사이 두 번째 손가락이 오면 pinch(팬/줌)로 넘어가 그림이 안 그려짐. 마우스·스타일러스는 즉시 그림.
+    let inkTouchPending: { wx: number; wy: number } | null = null
+    // 우클릭 임시 지우개(펜 활성 중 우클릭 드래그 = 마지막에 고른 지우개로 지움)
+    let rightErase = false
+    const ERASER_PX = 16 // 지우개 반경(화면 px) — 줌과 무관하게 손끝 느낌 일정
+    // 올가미: 그리는 중인 폴리곤(월드 점열) / 선택 이동 시작점(월드) / 이번 드래그 이동 여부
+    let lassoPts: number[] = []
+    let lassoLast: { x: number; y: number } | null = null
+    let lassoMoved = false
     // 코너 리사이즈: 고정점(anchor 월드좌표) + 방향부호(sx,sy) + 비율잠금 + 노드 회전각(rad)
     let resizeOp: {
       pid: string
@@ -1116,7 +1276,29 @@ export default function InfiniteCanvas() {
 
     function onDown(e: PointerEvent) {
       lastPointerType = e.pointerType || 'mouse'
-      if (e.button === 2) return // 우클릭 = 컨텍스트 메뉴(onContextMenu가 처리)
+      if (e.button === 2) {
+        // 펜 활성 중 우클릭 = 임시 지우개(마지막에 고른 지우개 종류로). 아니면 컨텍스트 메뉴.
+        if (getInkMode()) {
+          try {
+            canvas.setPointerCapture(e.pointerId)
+          } catch {
+            /* 무시 */
+          }
+          const p = localPos(e)
+          pointers.set(e.pointerId, p)
+          downAt = p
+          moved = false
+          mode = 'ink'
+          rightErase = true
+          inkCursor = p
+          const w = s2w(p.x, p.y)
+          const r = ERASER_PX / getCamera().zoom
+          inkErasedAny =
+            getLastEraser() === 'erasePart' ? erasePartNear(w.x, w.y, r) : eraseStrokesNear(w.x, w.y, r)
+          markDirty()
+        }
+        return // 컨텍스트 메뉴는 열지 않음(onContextMenu가 잉크 중엔 막음)
+      }
       try {
         canvas.setPointerCapture(e.pointerId)
       } catch {
@@ -1137,6 +1319,8 @@ export default function InfiniteCanvas() {
         dwellTarget = null
         armedFolderId = null
         armedSwapPid = null
+        inkPts = [] // 두 손가락 = 팬/줌 → 진행 중이던 필기 획은 버림
+        inkTouchPending = null // 대기 중이던 터치 필기도 취소(그림 X, 화면만 이동)
         clearLP()
         return
       }
@@ -1158,6 +1342,57 @@ export default function InfiniteCanvas() {
           else cancelSpine() // 빈 곳 클릭 → 취소
         }
         dragItem = null
+        return
+      }
+
+      // 잉크 모드: 이 드래그가 필기/지우기/올가미가 됨(다른 조작 무시).
+      // 단, Space 누름 / 가운데(휠)버튼이면 그리지 말고 아래 팬 핸들러로 넘김(화면 이동).
+      const ink = getInkMode()
+      if (ink && !spaceHeld && e.button !== 1) {
+        dragItem = null
+        const w = s2w(p.x, p.y)
+        const rz = getCamera().zoom
+        if (isDrawKind(ink)) {
+          mode = 'ink'
+          if (e.pointerType === 'touch') {
+            // 터치: 바로 시작 안 하고 대기 → 두 손가락이면 팬으로 넘어감
+            inkTouchPending = { wx: w.x, wy: w.y }
+            inkPts = []
+          } else {
+            inkPts = [w.x, w.y] // 마우스·스타일러스: 즉시(톡 = 점 하나)
+          }
+        } else if (ink === 'eraser' || ink === 'erasePart') {
+          mode = 'ink'
+          inkCursor = p
+          const r = ERASER_PX / rz
+          inkErasedAny =
+            ink === 'erasePart' ? erasePartNear(w.x, w.y, r) : eraseStrokesNear(w.x, w.y, r)
+        } else if (ink === 'lasso') {
+          const bb = selectedStrokesBBox()
+          if (bb) {
+            // 선택 박스 우상단 '삭제' 버튼 눌렀나?
+            const btn = w2s(bb.x1, bb.y0)
+            if (Math.hypot(p.x - (btn.x + 16), p.y - (btn.y - 16)) <= 14) {
+              deleteSelectedStrokes()
+              mode = 'none'
+              markDirty()
+              return
+            }
+            // 선택 박스 안을 눌렀으면 → 이동
+            if (w.x >= bb.x0 && w.x <= bb.x1 && w.y >= bb.y0 && w.y <= bb.y1) {
+              mode = 'lassomove'
+              lassoLast = w
+              lassoMoved = false
+              markDirty()
+              return
+            }
+          }
+          // 그 외 → 기존 선택 해제하고 새 올가미 시작
+          clearStrokeSelection()
+          mode = 'lasso'
+          lassoPts = [w.x, w.y]
+        }
+        markDirty()
         return
       }
 
@@ -1363,14 +1598,15 @@ export default function InfiniteCanvas() {
         const cx = (pts[0].x + pts[1].x) / 2
         const cy = (pts[0].y + pts[1].y) / 2
         const c = getCamera()
-        // 핀치 중심 월드 좌표 고정하며 줌
-        const before = s2w(cx, cy)
+        // 벌린 정도 변화 → 줌
         let zoom = c.zoom * (dist / (pinchPrev.dist || dist))
         zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom))
-        // 중심 이동(두 손가락 평행이동)도 반영
-        const ncx = c.x + (before.x - ((cx - cssW() / 2) / zoom + c.x))
-        const ncy = c.y + (before.y - ((cy - cssH() / 2) / zoom + c.y))
-        setCamera({ x: ncx, y: ncy, zoom })
+        // 직전 프레임 중심 아래에 있던 월드점을, 새 중심 위치로 옮김 → 두 손가락 이동이 곧 화면 이동(팬).
+        const wx = (pinchPrev.cx - cssW() / 2) / c.zoom + c.x
+        const wy = (pinchPrev.cy - cssH() / 2) / c.zoom + c.y
+        const nx = wx - (cx - cssW() / 2) / zoom
+        const ny = wy - (cy - cssH() / 2) / zoom
+        setCamera({ x: nx, y: ny, zoom })
         pinchPrev = { dist, cx, cy }
         return
       }
@@ -1378,6 +1614,78 @@ export default function InfiniteCanvas() {
       if (Math.hypot(p.x - downAt.x, p.y - downAt.y) > 3) {
         moved = true
         clearLP() // 움직이면 롱프레스 취소
+      }
+
+      // 잉크: 중간 좌표(getCoalescedEvents)까지 촘촘히 받아 매끈하게
+      if (mode === 'ink') {
+        const evs = e.getCoalescedEvents?.() ?? []
+        const samples = evs.length ? evs : [e]
+        // 우클릭 임시 지우개: 펜 종류와 무관하게 마지막 지우개로 지움
+        if (rightErase) {
+          const r = ERASER_PX / getCamera().zoom
+          const part = getLastEraser() === 'erasePart'
+          for (const ce of samples) {
+            const lp = localPos(ce)
+            const w = s2w(lp.x, lp.y)
+            const did = part ? erasePartNear(w.x, w.y, r) : eraseStrokesNear(w.x, w.y, r)
+            if (did) inkErasedAny = true
+          }
+          inkCursor = p
+          markDirty()
+          return
+        }
+        const im = getInkMode()
+        // 터치 대기: 살짝(8px) 움직여야 실제로 획 시작(그 전에 두 손가락 오면 팬).
+        if (inkTouchPending) {
+          if (Math.hypot(p.x - downAt.x, p.y - downAt.y) < 8) {
+            markDirty()
+            return
+          }
+          inkPts = [inkTouchPending.wx, inkTouchPending.wy]
+          inkTouchPending = null
+        }
+        if (im === 'highlighter') {
+          // 형광펜: 곡선 없이 시작점→현재점 '일자'(책에 형광펜 긋듯). 끝점만 갱신.
+          const w = s2w(p.x, p.y)
+          inkPts = [inkPts[0], inkPts[1], w.x, w.y]
+        } else if (isDrawKind(im)) {
+          for (const ce of samples) {
+            const lp = localPos(ce)
+            const w = s2w(lp.x, lp.y)
+            const n = inkPts.length
+            // 너무 촘촘한 점은 건너뜀(월드 0.5px 미만) → 데이터·렌더 절약
+            if (n >= 2 && Math.hypot(w.x - inkPts[n - 2], w.y - inkPts[n - 1]) < 0.5 / getCamera().zoom)
+              continue
+            inkPts.push(w.x, w.y)
+          }
+        } else {
+          const r = ERASER_PX / getCamera().zoom
+          for (const ce of samples) {
+            const lp = localPos(ce)
+            const w = s2w(lp.x, lp.y)
+            const did = im === 'erasePart' ? erasePartNear(w.x, w.y, r) : eraseStrokesNear(w.x, w.y, r)
+            if (did) inkErasedAny = true
+          }
+          inkCursor = p
+        }
+        markDirty()
+        return
+      }
+      if (mode === 'lasso') {
+        const w = s2w(p.x, p.y)
+        const n = lassoPts.length
+        if (!(n >= 2 && Math.hypot(w.x - lassoPts[n - 2], w.y - lassoPts[n - 1]) < 2 / getCamera().zoom))
+          lassoPts.push(w.x, w.y)
+        markDirty()
+        return
+      }
+      if (mode === 'lassomove' && lassoLast) {
+        const w = s2w(p.x, p.y)
+        moveSelectedStrokesBy(w.x - lassoLast.x, w.y - lassoLast.y)
+        lassoLast = w
+        lassoMoved = true
+        markDirty()
+        return
       }
 
       if (mode === 'pan') {
@@ -1639,6 +1947,22 @@ export default function InfiniteCanvas() {
         }
         commitMove(drawOp.pid) // 생성+크기 확정 → 히스토리 1스텝 + 저장
         setDrawTool(null) // 도구는 1회성(다시 그리려면 메뉴에서 다시 선택)
+      } else if (mode === 'ink') {
+        if (rightErase) {
+          if (inkErasedAny) commitStrokes() // 우클릭 임시 지우개: 지운 것만 확정
+        } else {
+          const im = getInkMode()
+          if (isDrawKind(im)) {
+            addStroke(inkPts, getPenColor(), getPenWidth(), im) // 획 확정(되돌리기 1스텝 + 저장)
+          } else if (inkErasedAny) {
+            commitStrokes() // 지운 게 있으면 1스텝으로 확정
+          }
+        }
+        // 도구 모드는 유지(연속 사용) — inkMode는 그대로 둠
+      } else if (mode === 'lasso') {
+        lassoSelectStrokes(lassoPts) // 폴리곤(자동 닫힘) 안의 획 선택
+      } else if (mode === 'lassomove') {
+        if (lassoMoved) commitStrokes() // 이동했으면 되돌리기 1스텝 확정
       } else if (mode === 'lineedit' && lineOp) {
         commitMove(lineOp.pid) // 각도·길이·회전 확정(되돌리기 1스텝 + 저장)
       } else if (mode === 'jointrotate' && jointOp) {
@@ -1673,6 +1997,14 @@ export default function InfiniteCanvas() {
       lineOp = null
       jointOp = null
       groupResizeOp = null
+      inkPts = []
+      inkErasedAny = false
+      inkCursor = null
+      inkTouchPending = null
+      rightErase = false
+      lassoPts = []
+      lassoLast = null
+      lassoMoved = false
       markDirty()
 
       if (pointers.size === 0) {
@@ -1706,6 +2038,7 @@ export default function InfiniteCanvas() {
     // 우클릭 = 커스텀 컨텍스트 메뉴(피그마식). 노드 위면 그 노드 선택.
     function onContextMenu(e: MouseEvent) {
       e.preventDefault()
+      if (getInkMode()) return // 펜 활성 중 우클릭 = 임시 지우개 → 메뉴 안 열림
       if (lastPointerType === 'touch') return // 모바일 꾹누름=다중선택, 컨텍스트메뉴는 톱니바퀴 버튼으로
       const rect = canvas.getBoundingClientRect()
       const sx = e.clientX - rect.left
@@ -1744,6 +2077,23 @@ export default function InfiniteCanvas() {
         }
         if (getDrawTool()) setDrawTool(null)
         if (getSpineWizard()) cancelSpine()
+        // Esc: 올가미 선택이 있으면 선택만 해제, 아니면 필기 도구 끄기
+        if (getSelectedStrokeIds().size) {
+          clearStrokeSelection()
+          lassoPts = []
+        } else if (getInkMode()) {
+          inkPts = []
+          inkErasedAny = false
+          inkCursor = null
+          inkTouchPending = null
+          if (mode === 'ink' || mode === 'lasso' || mode === 'lassomove') mode = 'none'
+          setInkMode(null)
+        }
+      }
+      // Delete/Backspace = 올가미로 고른 필기 삭제(입력칸 포커스 아닐 때)
+      if ((e.code === 'Delete' || e.code === 'Backspace') && !isTyping() && getSelectedStrokeIds().size) {
+        e.preventDefault()
+        deleteSelectedStrokes()
       }
     }
     function onKeyUp(e: KeyboardEvent) {
