@@ -481,6 +481,88 @@ export const BodyWrap = styled.div`
   flex: 1;
   display: flex;
   min-height: 0;
+  overflow: hidden; /* 확대(CSS scale)된 본문이 밖으로 안 넘치게 */
+`
+
+/* 노트 안 필기 레이어: 본문 위에 겹쳐 그림. 펜 모드일 때만 pointer-events 켜짐(인라인). */
+export const InkCanvas = styled.canvas`
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none; /* 펜 드래그 시 스크롤 방지 */
+  z-index: 2;
+`
+
+/* 펜/키보드 토글(삼성노트식) — 본문 우상단에 떠 있음. */
+export const InkToggle = styled.div`
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  z-index: 4;
+  display: flex;
+  gap: 4px;
+  background: rgba(243, 241, 234, 0.92);
+  border: 1px solid #d4cdb9;
+  border-radius: 9px;
+  padding: 3px;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.14);
+  button {
+    width: 32px;
+    height: 28px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: #6b6453;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  button[data-on='true'] {
+    background: #2b2a26;
+    color: #fff;
+  }
+`
+
+/* 올가미 선택 삭제 버튼 — 선택 박스 우상단에 떠 있음(펜 모드). */
+export const LassoDel = styled.button`
+  position: absolute;
+  z-index: 5;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #d99;
+  background: rgba(255, 245, 245, 0.95);
+  color: #b23;
+  border-radius: 8px;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.18);
+  touch-action: none;
+`
+
+/* 확대 퍼센트 표시(펜 모드). 본문 좌상단에 떠 있음. 탭하면 100%로. */
+export const ZoomTag = styled.button`
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  z-index: 4;
+  border: 1px solid #d4cdb9;
+  background: rgba(243, 241, 234, 0.92);
+  color: #6b6453;
+  border-radius: 9px;
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.14);
 `
 
 /* 모바일 Tab 버튼: 본문 우하단에 떠 있음. pointerdown에서 포커스 유지(키보드 안 내려감). */

@@ -1,6 +1,6 @@
 import { get, set } from 'idb-keyval'
 import { DEFAULT_BG, emptyDoc, uid } from './types'
-import type { Asset, ComponentDef, Frame, InkKind, InkStroke, NodeType, Placement, SEdge, Shape, SimpraWorldDoc, SNode, SpaceItem } from './types'
+import type { Asset, ComponentDef, Frame, InkKind, InkStroke, NodeType, NoteStroke, Placement, SEdge, Shape, SimpraWorldDoc, SNode, SpaceItem } from './types'
 import { makeSampleWorld } from './sampleWorld'
 import { measureTextNode, wrappedHeight } from './textMeasure'
 
@@ -452,7 +452,7 @@ export function cancelDrawNode(nodeId: string, pid: string) {
 // 닿는 획을 지운다. 획은 현재 공간(space)에 고정된 월드좌표 점열 → doc.strokes에 저장
 // (save/열기/되돌리기에 자동 포함). 한 번 켜면 계속 쓸 수 있음(도형툴처럼 1회성 아님).
 // 그리기(펜/형광펜/연필) + 도구(지우개 2종·올가미). null=필기 꺼짐.
-export type InkMode = InkKind | 'eraser' | 'erasePart' | 'lasso' | null
+export type InkMode = InkKind | 'eraser' | 'erasePart' | 'lasso' | 'fill' | null
 const DRAW_KINDS = new Set<InkMode>(['pen', 'highlighter', 'pencil'])
 export const isDrawKind = (m: InkMode): m is InkKind => DRAW_KINDS.has(m)
 
@@ -461,7 +461,7 @@ let lastEraser: 'eraser' | 'erasePart' = 'eraser' // 마지막에 고른 지우�
 export const getLastEraser = () => lastEraser
 let penColor = '#ff4d6d' // 펜 색
 let hlColor = '#ffe600' // 형광펜 색(기본 노랑)
-let penWidth = 3 // 펜 굵기(월드 단위)
+let penWidth = 3 // 펜 굵기(월드 단위). 지우개도 이 값을 공유(같은 크기).
 let hlWidth = 20 // 형광펜 굵기(기본 두껍게 — 밴드처럼)
 
 // 최근 사용색(로컬 저장, 최신 우선 최대 8) — 문서가 아니라 사용자 취향
@@ -487,8 +487,18 @@ function pushRecentColor(c: string) {
   }
 }
 
+// 화면이동(손) 도구: 켜지면 드래그가 그리기 대신 화면 이동(노트·캔버스 공통). 도구를 고르면 꺼짐.
+let panTool = false
+export const getPanTool = () => panTool
+export function setPanTool(v: boolean) {
+  panTool = v
+  markDirty()
+  bumpUI()
+}
+
 export const getInkMode = () => inkMode
 export function setInkMode(m: InkMode) {
+  panTool = false // 도구 선택 = 화면이동 해제
   inkMode = inkMode === m ? null : m // 같은 도구 다시 누르면 끄기(토글)
   if (inkMode === 'eraser' || inkMode === 'erasePart') lastEraser = inkMode // 우클릭 임시지우개가 쓸 종류 기억
   if (inkMode) {
@@ -513,14 +523,14 @@ export function commitRecentColor() {
   pushRecentColor(getInkColor())
   bumpUI()
 }
-// 활성 도구 굵기: 형광펜이면 형광펜 굵기, 그 외엔 펜 굵기.
-export const getInkWidth = () => (inkMode === 'highlighter' ? hlWidth : penWidth)
+// 활성 도구 굵기: 펜·형광펜·지우개 모두 penWidth 공유(같은 크기로 통일).
+export const getInkWidth = () => penWidth
 export function setInkWidth(w: number) {
-  const v = Math.max(1, Math.min(80, Math.round(w)))
-  if (inkMode === 'highlighter') hlWidth = v
-  else penWidth = v
+  penWidth = Math.max(1, Math.min(100, Math.round(w)))
   bumpUI()
 }
+/** 지우개 반경(월드) — 펜 크기의 절반(펜과 동일 크기 기준). 우클릭 임시지우개도 이 값 사용. */
+export const getEraserRadius = () => penWidth / 2
 // (하위호환) 예전 이름 — 캔버스가 쓰는 굵기 게터
 export const getPenWidth = getInkWidth
 export const setPenWidth = setInkWidth
@@ -548,15 +558,42 @@ export function addStroke(pts: number[], color: string, width: number, kind: Ink
   changed() // 되돌리기 1스텝 + 저장 + UI 알림
 }
 
-/** 점(px,py)이 획의 어느 선분에라도 tol 이내로 닿는지(획 전체 지우개 히트). */
-function strokeHitsPoint(s: InkStroke, px: number, py: number, tol: number): boolean {
-  const p = s.pts
-  if (p.length === 2) return Math.hypot(px - p[0], py - p[1]) <= tol // 점 하나짜리 획
-  for (let i = 0; i + 3 < p.length; i += 2) {
-    if (distToSeg(px, py, p[i], p[i + 1], p[i + 2], p[i + 3]) <= tol) return true
+/** 채우기 확정: 닫힌 영역 경계 폴리곤(pts)을 색으로 채운 fill 획 추가. */
+export function addFill(pts: number[], color: string) {
+  if (pts.length < 6) return // 점 3개 미만이면 면 없음
+  const stroke: InkStroke = {
+    id: uid('fill'),
+    space: getCurrentSpace(),
+    pts,
+    color,
+    width: 0,
+    fill: true,
+    updatedAt: Date.now(),
   }
-  return false
+  if (!doc.strokes) doc.strokes = []
+  doc.strokes.push(stroke) // 렌더에서 fill을 선보다 먼저 그려 선이 위로 오게 함
+  changed()
 }
+
+/**
+ * 지움 자국(area 지우개) 추가: 잉크 레이어에서 이 경로(굵기 width)만큼 픽셀을 파냄.
+ * 실제 렌더는 캔버스가 destination-out으로 처리. 되돌리기 1스텝 + 저장.
+ */
+export function addEraseMark(pts: number[], width: number) {
+  if (pts.length < 2) return
+  if (!doc.strokes) doc.strokes = []
+  doc.strokes.push({
+    id: uid('era'),
+    space: getCurrentSpace(),
+    pts,
+    color: '#000',
+    width,
+    erase: true,
+    updatedAt: Date.now(),
+  })
+  changed()
+}
+
 function distToSeg(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
   const dx = bx - ax
   const dy = by - ay
@@ -568,21 +605,36 @@ function distToSeg(px: number, py: number, ax: number, ay: number, bx: number, b
 }
 
 /**
- * 획 지우개(라이브): (wx,wy) 반경 r(월드) 안에 닿는 획을 통째로 제거.
- * 드래그 중엔 히스토리 없이 markDirty만(손 뗄 때 commitStrokes로 1스텝 확정). 지웠으면 true.
+ * 획 지우개(라이브): 지우개 선분 (ax,ay)-(bx,by) 반경 r 안에 닿는 획을 통째로 제거.
+ * 선분 기반이라 빠르게 그어도 사이 구간이 안 빠짐. 지웠으면 true.
  */
-export function eraseStrokesNear(wx: number, wy: number, r: number): boolean {
+export function eraseStrokesNear(ax: number, ay: number, bx: number, by: number, r: number): boolean {
   const strokes = doc.strokes
   if (!strokes || !strokes.length) return false
   const space = getCurrentSpace()
   let removed = false
   const keep: InkStroke[] = []
   for (const s of strokes) {
-    if (s.space === space && strokeHitsPoint(s, wx, wy, r + s.width / 2)) {
-      removed = true // 이 획은 버림
-    } else {
-      keep.push(s)
+    if (s.space !== space || s.erase) {
+      keep.push(s) // 지움 자국은 안 지움
+      continue
     }
+    if (s.fill) {
+      if (eraserHitsFill(s, ax, ay, bx, by, r)) removed = true
+      else keep.push(s)
+      continue
+    }
+    const tol = r + (s.width || 1) / 2
+    const p = densifyPts(s.pts, Math.max(r / 2, 1)) // 성긴 획(형광펜 2점)도 중간 교차 감지
+    let hit = false
+    for (let i = 0; i < p.length; i += 2) {
+      if (distToSeg(p[i], p[i + 1], ax, ay, bx, by) <= tol) {
+        hit = true
+        break
+      }
+    }
+    if (hit) removed = true
+    else keep.push(s)
   }
   if (removed) {
     doc.strokes = keep
@@ -591,47 +643,147 @@ export function eraseStrokesNear(wx: number, wy: number, r: number): boolean {
   return removed
 }
 
+// ── 노트 안 필기 (SNode.noteStrokes, 콘텐츠 로컬 좌표) ───────────────
+export const getNoteStrokes = (nodeId: string): NoteStroke[] => getNode(nodeId)?.noteStrokes ?? []
+
+/** 노트 안 한 획 확정. 점 1개(2값) 미만이면 무시. changed()로 저장·되돌리기 1스텝. */
+export function addNoteStroke(nodeId: string, s: NoteStroke) {
+  if (s.pts.length < 2) return
+  const n = getNode(nodeId)
+  if (!n) return
+  ;(n.noteStrokes ??= []).push(s)
+  n.updatedAt = Date.now()
+  changed()
+}
+
 /**
- * 부분 지우개(그림판식, 라이브): 반경 r 안에 든 점만 지우고, 살아남은 구간을 각각의 획으로 쪼갬.
- * (획이 촘촘히 샘플링돼 있어 점 단위 제거로도 매끄럽게 지워짐.) 변화 있었으면 true.
+ * 지우개 이동 선분 (ax,ay)-(bx,by) 반경 r 안에 닿는 노트 획을 통째로 지움(Stroke 지우개·우클릭).
+ * 캔버스 eraseStrokesNear와 동일: 획을 densify해 성긴 획(형광펜 2점)도 중간에서 잡고,
+ * 지움 자국(erase)은 지우지 않는다. 지운 게 있으면 true.
  */
-export function erasePartNear(wx: number, wy: number, r: number): boolean {
-  const strokes = doc.strokes
-  if (!strokes || !strokes.length) return false
-  const space = getCurrentSpace()
-  let changedAny = false
-  const out: InkStroke[] = []
-  for (const s of strokes) {
-    if (s.space !== space) {
-      out.push(s)
+export function eraseNoteStrokesNear(
+  nodeId: string,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  r: number,
+): boolean {
+  const n = getNode(nodeId)
+  if (!n?.noteStrokes?.length) return false
+  const keep: NoteStroke[] = []
+  let removed = false
+  for (const s of n.noteStrokes) {
+    if (s.erase) {
+      keep.push(s) // 지움 자국은 안 지움
       continue
     }
-    const tol = r + s.width / 2
-    const p = s.pts
-    const runs: number[][] = []
-    let cur: number[] = []
-    for (let i = 0; i < p.length; i += 2) {
-      if (Math.hypot(p[i] - wx, p[i + 1] - wy) <= tol) {
-        if (cur.length >= 2) runs.push(cur) // 지워진 점에서 구간 끊김
-        cur = []
-      } else {
-        cur.push(p[i], p[i + 1])
+    const tol = r + (s.width || 1) / 2
+    const p = densifyPts(s.pts, Math.max(r / 2, 1))
+    let hit = false
+    for (let i = 0; i < p.length; i += 2)
+      if (distToSeg(p[i], p[i + 1], ax, ay, bx, by) <= tol) {
+        hit = true
+        break
       }
-    }
-    if (cur.length >= 2) runs.push(cur)
-    if (runs.length === 1 && runs[0].length === p.length) {
-      out.push(s) // 변화 없음
-    } else {
-      changedAny = true
-      for (const run of runs) out.push({ ...s, id: uid('ink'), pts: run, updatedAt: Date.now() })
-      // 남은 구간이 없으면(전부 지워짐) 아무것도 안 넣음 = 삭제
+    if (hit) removed = true
+    else keep.push(s)
+  }
+  if (removed) {
+    n.noteStrokes = keep
+    n.updatedAt = Date.now()
+    changed()
+  }
+  return removed
+}
+
+/** 노트 획들을 (dx,dy)만큼 이동(올가미로 잘라 옮기기). commit=false면 저장 없이 미리보기(markDirty). */
+export function moveNoteStrokes(nodeId: string, ids: Set<string>, dx: number, dy: number, commit = true) {
+  const n = getNode(nodeId)
+  if (!n?.noteStrokes?.length || !ids.size) return
+  for (const s of n.noteStrokes) {
+    if (!ids.has(s.id)) continue
+    for (let i = 0; i < s.pts.length; i += 2) {
+      s.pts[i] += dx
+      s.pts[i + 1] += dy
     }
   }
-  if (changedAny) {
-    doc.strokes = out
-    markDirty()
+  if (commit) {
+    n.updatedAt = Date.now()
+    changed()
+  } else markDirty()
+}
+
+/** 노트 획들의 점/굵기를 직접 교체(올가미 크기조절용). commit=false면 미리보기. */
+export function applyNoteStrokeGeom(
+  nodeId: string,
+  geom: Map<string, { pts: number[]; width: number }>,
+  commit = true,
+) {
+  const n = getNode(nodeId)
+  if (!n?.noteStrokes?.length || !geom.size) return
+  for (const s of n.noteStrokes) {
+    const g = geom.get(s.id)
+    if (g) {
+      s.pts = g.pts
+      s.width = g.width
+    }
   }
-  return changedAny
+  if (commit) {
+    n.updatedAt = Date.now()
+    changed()
+  } else markDirty()
+}
+
+/** 노트 획 삭제(올가미 선택 삭제). */
+export function deleteNoteStrokes(nodeId: string, ids: Set<string>) {
+  const n = getNode(nodeId)
+  if (!n?.noteStrokes?.length || !ids.size) return
+  const before = n.noteStrokes.length
+  n.noteStrokes = n.noteStrokes.filter((s) => !ids.has(s.id))
+  if (n.noteStrokes.length !== before) {
+    n.updatedAt = Date.now()
+    changed()
+  }
+}
+
+/** 선을 step 간격으로 촘촘히 리샘플(성긴 획도 중간 교차 감지용). */
+function densifyPts(pts: number[], step: number): number[] {
+  if (pts.length <= 4) {
+    // 점 1개는 그대로, 2점(직선·형광펜)은 그 한 세그먼트를 잘게 나눔
+    if (pts.length < 4) return pts.slice()
+    const out = [pts[0], pts[1]]
+    const d = Math.hypot(pts[2] - pts[0], pts[3] - pts[1])
+    const n = Math.max(1, Math.floor(d / step))
+    for (let k = 1; k <= n; k++) {
+      const t = k / n
+      out.push(pts[0] + (pts[2] - pts[0]) * t, pts[1] + (pts[3] - pts[1]) * t)
+    }
+    return out
+  }
+  const out = [pts[0], pts[1]]
+  for (let i = 2; i < pts.length; i += 2) {
+    const ax = pts[i - 2],
+      ay = pts[i - 1],
+      bx = pts[i],
+      by = pts[i + 1]
+    const d = Math.hypot(bx - ax, by - ay)
+    const n = Math.max(1, Math.floor(d / step))
+    for (let k = 1; k <= n; k++) {
+      const t = k / n
+      out.push(ax + (bx - ax) * t, ay + (by - ay) * t)
+    }
+  }
+  return out
+}
+
+/** 지우개 선분이 채우기(면)에 닿는지 — 폴리곤 내부거나 경계 r 이내. */
+function eraserHitsFill(s: InkStroke, ax: number, ay: number, bx: number, by: number, r: number): boolean {
+  if (pointInPoly(ax, ay, s.pts) || pointInPoly(bx, by, s.pts)) return true
+  const dp = densifyPts(s.pts, Math.max(r, 1))
+  for (let i = 0; i < dp.length; i += 2)
+    if (distToSeg(dp[i], dp[i + 1], ax, ay, bx, by) <= r) return true
+  return false
 }
 
 /** 지우개/이동 드래그 확정: 되돌리기 1스텝 + 저장. */
@@ -671,7 +823,7 @@ export function lassoSelectStrokes(poly: number[]): void {
   const sel = new Set<string>()
   if (poly.length >= 6) {
     for (const s of doc.strokes ?? []) {
-      if (s.space !== space) continue
+      if (s.space !== space || s.erase) continue
       let inside = 0
       const total = s.pts.length / 2
       for (let i = 0; i < s.pts.length; i += 2)
@@ -724,6 +876,37 @@ export function deleteSelectedStrokes(): void {
   doc.strokes = doc.strokes.filter((s) => !selectedStrokeIds.has(s.id))
   selectedStrokeIds = new Set()
   changed()
+}
+
+/** 리사이즈 시작용 스냅샷(선택 획들의 점·굵기 원본 복사). */
+export function getSelectedStrokesSnapshot(): { id: string; pts: number[]; width: number }[] {
+  const snap: { id: string; pts: number[]; width: number }[] = []
+  for (const s of doc.strokes ?? [])
+    if (selectedStrokeIds.has(s.id)) snap.push({ id: s.id, pts: s.pts.slice(), width: s.width })
+  return snap
+}
+
+/** 선택 획들을 고정점(fx,fy) 기준 배율 k로 균일 스케일(스냅샷 기준 → 누적오차 없음). */
+export function applyStrokeScale(
+  snap: { id: string; pts: number[]; width: number }[],
+  fx: number,
+  fy: number,
+  k: number,
+): void {
+  const byId = new Map((doc.strokes ?? []).map((s) => [s.id, s]))
+  for (const e of snap) {
+    const s = byId.get(e.id)
+    if (!s) continue
+    const np = new Array(e.pts.length)
+    for (let i = 0; i < e.pts.length; i += 2) {
+      np[i] = fx + (e.pts[i] - fx) * k
+      np[i + 1] = fy + (e.pts[i + 1] - fy) * k
+    }
+    s.pts = np
+    if (!s.fill) s.width = Math.max(0.5, e.width * k) // 채움(면)은 굵기 없음
+    s.updatedAt = Date.now()
+  }
+  markDirty()
 }
 
 export const getSelectedComponentId = () => selectedComponentId
@@ -2090,6 +2273,8 @@ export function exportFolderDoc(folderId: string): SimpraWorldDoc {
     if (n?.assetId) assetIds.add(n.assetId)
   }
   for (const a of doc.assets) if (assetIds.has(a.id)) out.assets.push({ ...a })
+  // 필기 획: 포함된 공간(폴더·하위폴더)에 그려진 것만 함께 내보냄(공간 id 유지)
+  for (const s of doc.strokes ?? []) if (s.space && spaces.has(s.space)) out.strokes!.push({ ...s })
   return out
 }
 
@@ -2136,6 +2321,9 @@ export function exportSpaceDoc(spaceId: string | null): SimpraWorldDoc {
   }
   for (const a of doc.assets) if (assetIds.has(a.id)) out.assets.push({ ...a })
   for (const e of doc.edges) if (inclPids.has(e.from) && inclPids.has(e.to)) out.edges.push({ ...e })
+  // 필기 획: 포함 공간에 그려진 것만. 현재 공간 직속(space===spaceId)은 배치와 동일하게 루트(null)로 재매핑.
+  for (const s of doc.strokes ?? [])
+    if (spaces.has(s.space)) out.strokes!.push({ ...s, space: s.space === spaceId ? null : s.space })
   return out
 }
 

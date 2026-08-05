@@ -19,12 +19,12 @@ export const Bar = styled.div`
   will-change: transform;
 `
 
-export const Btn = styled.button`
+export const Btn = styled.button<{ $danger?: boolean }>`
   width: 40px;
   height: 38px;
   border: none;
   background: none;
-  color: #dbe3f4;
+  color: ${(p) => (p.$danger ? '#ff6b6b' : '#dbe3f4')};
   font-size: 17px;
   line-height: 1;
   border-radius: 10px;
@@ -34,8 +34,8 @@ export const Btn = styled.button`
   justify-content: center;
   transition: background 0.12s ease, color 0.12s ease;
   &:active {
-    background: #3ddc7f33;
-    color: #fff;
+    background: ${(p) => (p.$danger ? '#ff6b6b33' : '#3ddc7f33')};
+    color: ${(p) => (p.$danger ? '#ff8a8a' : '#fff')};
   }
 `
 

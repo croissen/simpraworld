@@ -16,9 +16,9 @@ import {
 } from '../store'
 import * as S from './ObjectActions.styles'
 
-// 모바일: 선택된 개체 위 중앙에 뜨는 액션 바 [⚙ 메뉴 · ✏️ 편집 · → 열기].
+// 모바일: 선택된 개체 위 중앙에 뜨는 액션 바 [🗑 삭제 · ⚙ 메뉴 · ✏️ 편집 · → 열기].
 // 카메라/선택을 매 프레임 읽어 위치를 갱신(팬·줌 따라 따라다님).
-export default function ObjectActions() {
+export default function ObjectActions({ onRequestDelete }: { onRequestDelete: () => void }) {
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -98,6 +98,10 @@ export default function ObjectActions() {
 
   return (
     <S.Bar ref={ref} style={{ visibility: 'hidden' }}>
+      <S.Btn $danger onClick={onRequestDelete} title="Delete">
+        🗑
+      </S.Btn>
+      <S.Divider />
       <S.Btn onClick={openMenu} title="Menu">
         ⚙
       </S.Btn>

@@ -5,25 +5,28 @@ export const Toolbar = styled.div`
   gap: 6px;
   align-items: center;
 
-  /* 모바일: 우측 하단에 동그란 FAB 3개(+, 📄, ⋯)로 고정 */
+  /* 모바일: 하단 중앙에 동그란 FAB 가로 배열(⌂ ✎ + 📁 ⋯) */
   @media (max-width: 640px) {
     position: fixed;
-    right: 16px;
-    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(30px + env(safe-area-inset-bottom, 0px));
     z-index: 30;
-    flex-direction: column-reverse;
-    align-items: flex-end;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
     gap: 12px;
     & > button {
-      width: 56px;
-      height: 56px;
+      width: 60px;
+      height: 60px;
       padding: 0;
       border-radius: 50%;
-      font-size: 22px;
+      font-size: 25px;
       display: flex;
       align-items: center;
       justify-content: center;
       box-shadow: 0 6px 18px #0007;
+      flex: none;
     }
   }
 `
@@ -31,6 +34,79 @@ export const Toolbar = styled.div`
 export const Gap = styled.span`
   width: 8px;
   flex: none;
+`
+
+// 하단 조이스틱: 뒤에 레일(트랙)을 깔고, 손잡이(버튼)가 그 위를 좌우로 미끄러짐.
+const iconIn = keyframes`
+  from { opacity: 0.15; transform: scale(0.6); }
+  to   { opacity: 1; transform: scale(1); }
+`
+// 한 칸(60px) 자리 차지하는 래퍼(내부에 트랙+손잡이). S.Toolbar의 `& > button` FAB는 안 받음.
+export const Stick = styled.div`
+  position: relative;
+  flex: none;
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+`
+// 조이스틱 레일 — 평소 숨김(opacity 0), 끄는 방향에만 표시. 옆 버튼은 안 가리게 짧게.
+export const StickRail = styled.div<{ $side: 'l' | 'r'; $on: boolean }>`
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  ${(p) => (p.$side === 'l' ? 'right: 30px;' : 'left: 30px;')}
+  width: 34px;
+  height: 20px;
+  border-radius: 10px;
+  background: #0d1120;
+  border: 1px solid #262f42;
+  box-shadow: inset 0 1px 3px #000a;
+  z-index: 0;
+  opacity: ${(p) => (p.$on ? 1 : 0)};
+  transition: opacity 0.12s ease;
+`
+// 손잡이(버튼) — 다른 FAB와 동일한 크기/색
+export const StickKnob = styled.button`
+  position: relative;
+  z-index: 2;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: #1b2030;
+  border: 1px solid #2b3346;
+  color: #dbe3f4;
+  font-size: 25px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 18px #0007;
+  cursor: pointer;
+  touch-action: none;
+  & > .ic {
+    display: inline-flex;
+    animation: ${iconIn} 0.16s ease; /* 방향 아이콘 전환 시 부드럽게 */
+  }
+`
+
+// ⋯(Setting) 토글을 모바일에서 우상단 고정 원형 버튼으로(body로 포털됨).
+export const CornerFab = styled.div`
+  position: fixed;
+  top: 5px; /* 헤더 로고·제목과 상하 중앙 맞춤 */
+  right: 8px; /* 헤더 좌측 패딩(8px)과 대칭 */
+  z-index: 40;
+  & > button {
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    border-radius: 50%;
+    font-size: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 14px #0006;
+  }
 `
 
 /* Undo/Redo 묶음 — 모바일에선 상단 헤더로 옮겨가므로 툴바에서 숨김 */
@@ -92,25 +168,103 @@ export const MobilePopOverlay = styled.div`
   z-index: 200;
   background: rgba(0, 0, 0, 0.45);
   display: flex;
-  align-items: flex-end;
+  align-items: center; /* 화면 중앙 */
   justify-content: center;
 `
 
 export const MobileSheet = styled.div`
+  /* 요소 수와 무관하게 크기 통일 — 제일 긴 Setting(유니버스명 줄 + 7항목)이 스크롤 없이 보이는 높이로 고정. */
   width: 100%;
-  max-width: 480px;
-  margin: 0 8px 8px;
+  max-width: 300px;
+  height: min(90vh, 524px);
+  margin: 0 16px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px;
   background: #161b27f5;
   border: 1px solid #2b3346;
   border-radius: 16px;
-  box-shadow: 0 -12px 40px #0009;
+  box-shadow: 0 16px 44px #0009;
   backdrop-filter: blur(8px);
+  overflow: hidden;
+`
 
-  /* 안의 버튼들은 큼직하게 한 줄씩 */
+/* 팝업 상단: 좌측 제목 + 우측 X */
+export const SheetHead = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+`
+
+export const SheetTitle = styled.span`
+  font-size: 15px;
+  font-weight: 700;
+  color: #eef2f8;
+  letter-spacing: 0.2px;
+`
+
+/* 닫기(X) — 감싸는 박스 없이 글리프만 */
+export const SheetClose = styled.button`
+  border: none;
+  background: none;
+  color: #9aa5bd;
+  font-size: 18px;
+  line-height: 1;
+  padding: 4px;
+  margin: -4px;
+  cursor: pointer;
+  &:active {
+    color: #fff;
+  }
+`
+
+/* 제목 아래 서브헤더(유니버스명 + 수정) */
+export const SheetSub = styled.div`
+  padding: 0 16px 8px;
+`
+export const NameRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #2b3346;
+  border-radius: 10px;
+  background: #0f1320;
+  & > .nm {
+    flex: 1;
+    min-width: 0;
+    color: #eef2f8;
+    font-size: 15px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  & > button {
+    flex: none;
+    border: none;
+    background: none;
+    color: #9aa5bd;
+    font-size: 17px;
+    line-height: 1;
+    padding: 4px;
+    cursor: pointer;
+  }
+  & > button:active {
+    color: #fff;
+  }
+`
+
+/* 항목 목록 — 남는 공간 채우고, 넘치면 스크롤(제목과 살짝 간격) */
+export const SheetBody = styled.div`
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 12px 12px;
+
   & button {
     width: 100%;
     justify-content: flex-start;

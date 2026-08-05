@@ -7,17 +7,23 @@ import * as S from './Toolbar.styles'
 export default function OverflowMenu({
   label,
   title,
+  heading,
+  subheader,
   items,
   defaultOpen = false,
   align = 'left',
   saved = false,
+  corner = false,
 }: {
   label: ReactNode // 토글 버튼 내용 (예: '+', '📄', '⋯')
   title?: string
+  heading?: string // 모바일 중앙 팝업 좌측 제목 (예: 'Add', 'Directory', 'Setting')
+  subheader?: ReactNode // 제목 아래 줄(예: Setting 팝업의 유니버스명 + 수정)
   items: ReactElement[] // 펼쳐질 버튼들
   defaultOpen?: boolean
   align?: 'left' | 'right'
   saved?: boolean // 토글 버튼 초록 체크 강조(저장 직후 "..." 메뉴용)
+  corner?: boolean // 모바일에서 토글을 우상단 고정 버튼으로(⋯ Setting용)
 }) {
   const isMobile = useIsMobile()
   const [open, setOpen] = useState(isMobile ? false : defaultOpen)
@@ -32,16 +38,27 @@ export default function OverflowMenu({
   if (isMobile) {
     return (
       <>
-        {toggle}
+        {corner
+          ? createPortal(<S.CornerFab>{toggle}</S.CornerFab>, document.body)
+          : toggle}
         {open &&
           createPortal(
             <S.MobilePopOverlay onClick={() => setOpen(false)}>
               <S.MobileSheet onClick={(e) => e.stopPropagation()}>
-                {items.map((el, i) => (
-                  <div key={el.key ?? i} onClick={() => setOpen(false)}>
-                    {el}
-                  </div>
-                ))}
+                <S.SheetHead>
+                  <S.SheetTitle>{heading}</S.SheetTitle>
+                  <S.SheetClose onClick={() => setOpen(false)} title="Close">
+                    ✕
+                  </S.SheetClose>
+                </S.SheetHead>
+                {subheader && <S.SheetSub>{subheader}</S.SheetSub>}
+                <S.SheetBody>
+                  {items.map((el, i) => (
+                    <div key={el.key ?? i} onClick={() => setOpen(false)}>
+                      {el}
+                    </div>
+                  ))}
+                </S.SheetBody>
               </S.MobileSheet>
             </S.MobilePopOverlay>,
             document.body,

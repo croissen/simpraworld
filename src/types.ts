@@ -71,6 +71,7 @@ export interface SNode {
   badgeSize?: number // 배지 폰트 크기(월드 단위, 기본 14). 노드 크기와 무관 → 가림 비율 고정.
   badgeColor?: string // 배지 글자색(기본 진한색)
   badgeBg?: string // 배지 배경색. 'none'=배경 없음, 미지정=기본 앰버
+  noteStrokes?: NoteStroke[] // 노트 안 자유 필기(본문 콘텐츠 로컬 좌표). 텍스트 위에 겹쳐 그려짐.
   framePC?: Frame // 폴더 전용: PC로 진입할 때 맞춰 들어갈 기준 영역(없으면 0,0 기본줌)
   frameMobile?: Frame // 폴더 전용: 모바일로 진입할 때의 기준 영역
   updatedAt: number
@@ -141,6 +142,20 @@ export interface SEdge {
  */
 export type InkKind = 'pen' | 'highlighter' | 'pencil' // 펜=선명 / 형광펜=반투명·굵게 / 연필=살짝 흐리게
 
+/**
+ * 노트 안 필기 획 = 메모 편집기 안에서 텍스트 위에 겹쳐 그리는 한 획.
+ * pts = 본문 "콘텐츠 좌표"(px) [x0,y0,…] — 세로는 스크롤 포함이라 글과 함께 스크롤됨.
+ * SNode.noteStrokes에 저장 → .spu 저장/불러오기·되돌리기에 노드와 함께 실림.
+ */
+export interface NoteStroke {
+  id: string
+  pts: number[]
+  color: string
+  width: number
+  kind?: InkKind // 없으면 'pen'
+  erase?: boolean // true면 '지움 자국' → 렌더 시 destination-out으로 앞선 획 픽셀을 파냄(Area 지우개)
+}
+
 export interface InkStroke {
   id: string
   space: string | null // 그려진 공간(폴더 node id, null=최상위). 그 공간에서만 보임.
@@ -148,6 +163,8 @@ export interface InkStroke {
   color: string
   width: number // 굵기(월드 단위)
   kind?: InkKind // 없으면 'pen'으로 취급(구버전 호환)
+  fill?: boolean // true면 pts=닫힌 영역 경계 폴리곤 → 색으로 채워 그림(채우기 도구 결과)
+  erase?: boolean // true면 '지움 자국' → 잉크 레이어에서 이 경로(굵기 width)만큼 픽셀을 파냄(area 지우개)
   updatedAt: number
 }
 
@@ -181,6 +198,7 @@ export function emptyDoc(): SimpraWorldDoc {
     nodes: [],
     placements: [],
     edges: [],
+    strokes: [],
     assets: [],
     components: [],
   }

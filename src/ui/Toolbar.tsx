@@ -11,11 +11,13 @@ import {
   getComponentsOpen,
   getLibraryOpen,
   getUniverseName,
+  goTo,
   hasUnsavedWork,
   importWorld,
   redo,
   resetToSample,
   selectionCount,
+  setUniverseName,
   toggleComponents,
   toggleLibrary,
   undo,
@@ -41,7 +43,33 @@ import PromptModal from './PromptModal'
 import OverflowMenu from './OverflowMenu'
 import ShapePicker from './ShapePicker'
 import PenPalette from './PenPalette'
+import UndoRedoStick from './UndoRedoStick'
+import { useIsMobile } from '../useIsMobile'
 import * as S from './Toolbar.styles'
+
+// ✎(펜)처럼 얇은 라인 아이콘. 1em이라 버튼 폰트 크기 따라 스케일(글리프처럼).
+const stroke = {
+  width: '1em',
+  height: '1em',
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 1.7,
+  strokeLinecap: 'round' as const,
+  strokeLinejoin: 'round' as const,
+  'aria-hidden': true,
+}
+const IconHome = () => (
+  <svg {...stroke}>
+    <path d="M3.5 11.5 12 4l8.5 7.5" />
+    <path d="M5.5 10v9.5h13V10" />
+  </svg>
+)
+const IconFolder = () => (
+  <svg {...stroke}>
+    <path d="M3.5 6.5h5l2 2h10v9.5a1 1 0 0 1-1 1H4.5a1 1 0 0 1-1-1z" />
+  </svg>
+)
 
 export default function Toolbar() {
   const [confirmReset, setConfirmReset] = useState(false)
@@ -49,6 +77,8 @@ export default function Toolbar() {
   const [confirmNew, setConfirmNew] = useState(false) // New 전 "현재 작업 저장?" 모달
   const [promptName, setPromptName] = useState<string | null>(null) // 모바일 Save 시 파일명 입력
   const [pickShape, setPickShape] = useState(false) // + Element → 도형 선택 팝업
+  const [renameName, setRenameName] = useState<string | null>(null) // Setting: 유니버스명 수정 프롬프트
+  const isMobile = useIsMobile()
   // 현재 파일명/존재 여부 변경 시 버튼 라벨 갱신
   useSyncExternalStore(subscribeFile, getFileSnapshot)
 
@@ -143,9 +173,23 @@ export default function Toolbar() {
         </S.Button>
         <S.Gap />
       </S.UndoGroup>
+      {/* 홈: 최상단 유니버스(루트)로 이동 */}
+      <S.Button onClick={() => goTo(null)} title="Home — go to the top universe">
+        <IconHome />
+      </S.Button>
+      {/* ✎ 펜: 누르면 바로 필기 모드 진입(플로팅 팔레트). 다시 누르면 완전 종료. */}
+      <S.Button
+        $on={!!getInkMode()}
+        onClick={() => setInkMode(getInkMode() ? null : 'pen')}
+        title="Draw — write freely with finger or mouse (press again to turn off)"
+      >
+        ✎
+      </S.Button>
+      {getInkMode() && <PenPalette />}
       {/* + 메뉴: 추가 도구 (기본 열림) */}
       <OverflowMenu
         label="+"
+        heading="Add"
         title="Add — Folder, Note, Photo"
         defaultOpen
         align="right"
@@ -184,18 +228,12 @@ export default function Toolbar() {
           onClose={() => setPickShape(false)}
         />
       )}
-      {/* ✎ 펜: 누르면 바로 필기 모드 진입(플로팅 팔레트). 다시 누르면 완전 종료. */}
-      <S.Button
-        $on={!!getInkMode()}
-        onClick={() => setInkMode(getInkMode() ? null : 'pen')}
-        title="Draw — write freely with finger or mouse (press again to turn off)"
-      >
-        ✎
-      </S.Button>
-      {getInkMode() && <PenPalette />}
+      {/* 하단 4번째: undo/redo 조이스틱(모바일). 폴더보다 앞 → 좌우 슬라이드 여유. */}
+      {isMobile && <UndoRedoStick />}
       {/* 📄 메뉴: 보기 패널 (기본 닫힘) */}
       <OverflowMenu
-        label="📁"
+        label={<IconFolder />}
+        heading="Directory"
         title="Panels — Components, Library"
         align="right"
         items={[
@@ -220,7 +258,17 @@ export default function Toolbar() {
       {/* ⋯ 메뉴: 파일 (기본 닫힘, 오른쪽 끝 고정, 저장 직후 초록 체크) */}
       <OverflowMenu
         align="right"
+        corner
         label={getJustSaved() ? '✓' : '⋯'}
+        heading="Setting"
+        subheader={
+          <S.NameRow>
+            <span className="nm">{getUniverseName()}</span>
+            <button onClick={() => setRenameName(getUniverseName())} title="Rename universe">
+              ✎
+            </button>
+          </S.NameRow>
+        }
         saved={getJustSaved()}
         title={getJustSaved() ? 'Saved' : 'File menu — New, Save, Load, Export, Import, Reset'}
         items={[
@@ -327,6 +375,19 @@ export default function Toolbar() {
           okLabel="Save"
           onSubmit={onSaveNameSubmit}
           onCancel={() => setPromptName(null)}
+        />
+      )}
+      {renameName !== null && (
+        <PromptModal
+          title="Universe name"
+          initial={renameName}
+          okLabel="Save"
+          onSubmit={(v) => {
+            const name = v.trim()
+            if (name) setUniverseName(name)
+            setRenameName(null)
+          }}
+          onCancel={() => setRenameName(null)}
         />
       )}
     </S.Toolbar>

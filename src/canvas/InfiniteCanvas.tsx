@@ -6,6 +6,7 @@ import * as S from './InfiniteCanvas.styles'
 import {
   addShapeAt,
   bumpUI,
+  getSnapshot,
   cancelDrawNode,
   cancelSpine,
   canNestInto,
@@ -16,12 +17,13 @@ import {
   getDrawTool,
   getInkMode,
   isDrawKind,
-  getLastEraser,
+  getEraserRadius,
   getPenColor,
   getPenWidth,
   addStroke,
+  addFill,
+  addEraseMark,
   eraseStrokesNear,
-  erasePartNear,
   commitStrokes,
   strokesInCurrentSpace,
   setInkMode,
@@ -31,6 +33,9 @@ import {
   deleteSelectedStrokes,
   clearStrokeSelection,
   getSelectedStrokeIds,
+  getSelectedStrokesSnapshot,
+  applyStrokeScale,
+  getPanTool,
   getSpineWizard,
   groupOBB,
   groupScaleSnapshot,
@@ -56,6 +61,7 @@ import {
   getNode,
   getShowGrid,
   getShowFrame,
+  getCurrentSpace,
   getCurrentFrame,
   placementPos,
   applyEntryFrame,
@@ -161,6 +167,209 @@ export default function InfiniteCanvas() {
         x: (sx - cssW() / 2) / c.zoom + c.x,
         y: (sy - cssH() / 2) / c.zoom + c.y,
       }
+    }
+
+    /**
+     * 채우기(최초 방식): 그려진 '선(테두리)'만 벽으로 보고, 클릭한 곳이 선으로 닫힌 영역이면
+     * 그 안쪽을 채운다(지움 자국으로 뚫린 테두리는 새는 걸로 판정). 바깥으로 새면 null.
+     * 선 두께 절반만큼 살짝 부풀려 선 밑까지 채워 틈 없앰.
+     */
+    function computeFillPolygon(sx: number, sy: number): number[] | null {
+      const items = strokesInCurrentSpace()
+      const strokes = items.filter((s) => !s.fill && !s.erase) // 벽 = 선(테두리)만
+      if (!strokes.length) return null
+      let x0 = Infinity,
+        y0 = Infinity,
+        x1 = -Infinity,
+        y1 = -Infinity
+      for (const s of strokes) {
+        const hw = (s.width || 1) / 2
+        for (let i = 0; i < s.pts.length; i += 2) {
+          x0 = Math.min(x0, s.pts[i] - hw)
+          x1 = Math.max(x1, s.pts[i] + hw)
+          y0 = Math.min(y0, s.pts[i + 1] - hw)
+          y1 = Math.max(y1, s.pts[i + 1] + hw)
+        }
+      }
+      const pad = 8
+      x0 -= pad
+      y0 -= pad
+      x1 += pad
+      y1 += pad
+      const bw = x1 - x0,
+        bh = y1 - y0
+      if (bw <= 0 || bh <= 0) return null
+      const cw = s2w(sx, sy)
+      if (cw.x < x0 || cw.x > x1 || cw.y < y0 || cw.y > y1) return null
+      const scale = Math.min(1200 / bw, 1200 / bh, 6)
+      const W = Math.max(4, Math.ceil(bw * scale)),
+        H = Math.max(4, Math.ceil(bh * scale))
+      const off = document.createElement('canvas')
+      off.width = W
+      off.height = H
+      const octx = off.getContext('2d')
+      if (!octx) return null
+      const RX = (wx: number) => (wx - x0) * scale
+      const RY = (wy: number) => (wy - y0) * scale
+      // 선을 흰색으로 그리고, 지움 자국은 파냄(뚫린 테두리 반영). 채우기(면)는 무시.
+      octx.clearRect(0, 0, W, H)
+      octx.lineCap = 'round'
+      octx.lineJoin = 'round'
+      for (const s of items) {
+        if (s.fill) continue
+        if (s.erase) {
+          octx.globalCompositeOperation = 'destination-out'
+          octx.strokeStyle = '#000'
+          octx.fillStyle = '#000'
+        } else {
+          octx.globalCompositeOperation = 'source-over'
+          octx.strokeStyle = '#fff'
+          octx.fillStyle = '#fff'
+        }
+        octx.lineWidth = Math.max(1.5, (s.width || 1) * scale)
+        octx.beginPath()
+        octx.moveTo(RX(s.pts[0]), RY(s.pts[1]))
+        for (let i = 2; i < s.pts.length; i += 2) octx.lineTo(RX(s.pts[i]), RY(s.pts[i + 1]))
+        octx.stroke()
+        if (s.pts.length === 2) {
+          octx.beginPath()
+          octx.arc(RX(s.pts[0]), RY(s.pts[1]), octx.lineWidth / 2, 0, Math.PI * 2)
+          octx.fill()
+        }
+      }
+      octx.globalCompositeOperation = 'source-over'
+      const data = octx.getImageData(0, 0, W, H).data
+      const wall = new Uint8Array(W * H)
+      for (let i = 0; i < W * H; i++) wall[i] = data[i * 4 + 3] > 40 ? 1 : 0 // 선(칠해진 픽셀)=벽
+      const startX = Math.round(RX(cw.x)),
+        startY = Math.round(RY(cw.y))
+      if (startX < 0 || startY < 0 || startX >= W || startY >= H) return null
+      if (wall[startY * W + startX]) return null // 선 위 클릭 → 채울 것 없음
+      // 빈 곳(선 안쪽) 플러드필. 바깥 테두리에 닿으면 안 닫힌 것 → null.
+      const region = new Uint8Array(W * H)
+      const stack = [startY * W + startX]
+      region[startY * W + startX] = 1
+      let touchedBorder = false
+      while (stack.length) {
+        const idx = stack.pop() as number
+        const x = idx % W,
+          y = (idx / W) | 0
+        if (x === 0 || y === 0 || x === W - 1 || y === H - 1) touchedBorder = true
+        const nb = [idx - 1, idx + 1, idx - W, idx + W]
+        const nx = [x - 1, x + 1, x, x]
+        const ny = [y, y, y - 1, y + 1]
+        for (let k = 0; k < 4; k++) {
+          if (nx[k] < 0 || ny[k] < 0 || nx[k] >= W || ny[k] >= H) continue
+          const ni = nb[k]
+          if (!region[ni] && !wall[ni]) {
+            region[ni] = 1
+            stack.push(ni)
+          }
+        }
+      }
+      if (touchedBorder) return null // 안 닫힘(새는 영역) → 채우지 않음
+      // 선 두께 절반+여유만큼 부풀림 → 선 밑까지 틈 없이 채움(살짝 넘칠 수 있음, 단순/안정).
+      let maxW = 1
+      for (const s of strokes) maxW = Math.max(maxW, s.width || 1)
+      const dr = Math.min(48, Math.round((maxW * scale) / 2) + 2)
+      const grown = dilateMask(region, W, H, dr)
+      const contour = traceContour(grown, W, H)
+      if (contour.length < 6) return null
+      let out: number[] = []
+      const step = Math.max(1, Math.floor(contour.length / 2 / 400))
+      for (let i = 0; i < contour.length; i += 2 * step)
+        out.push(x0 + contour[i] / scale, y0 + contour[i + 1] / scale)
+      if (out.length < 6) return null
+      out = chaikin(chaikin(out))
+      return out
+    }
+
+    /** 마스크 팽창: 4방향 1px씩 r번 → 반경 r만큼 확장(선 밑까지 채움이 들어가게, 틈 방지). */
+    function dilateMask(mask: Uint8Array, W: number, H: number, r: number): Uint8Array {
+      let cur = mask
+      for (let it = 0; it < r; it++) {
+        const next = new Uint8Array(cur)
+        for (let y = 0; y < H; y++) {
+          for (let x = 0; x < W; x++) {
+            const i = y * W + x
+            if (cur[i]) continue
+            if (
+              (x > 0 && cur[i - 1]) ||
+              (x < W - 1 && cur[i + 1]) ||
+              (y > 0 && cur[i - W]) ||
+              (y < H - 1 && cur[i + W])
+            )
+              next[i] = 1
+          }
+        }
+        cur = next
+      }
+      return cur
+    }
+
+    /** Chaikin 코너 컷: 닫힌 폴리곤을 한 단계 부드럽게(점 2배). */
+    function chaikin(poly: number[]): number[] {
+      const n = poly.length / 2
+      if (n < 4) return poly
+      const out: number[] = []
+      for (let i = 0; i < n; i++) {
+        const ax = poly[i * 2]
+        const ay = poly[i * 2 + 1]
+        const bx = poly[((i + 1) % n) * 2]
+        const by = poly[((i + 1) % n) * 2 + 1]
+        out.push(ax * 0.75 + bx * 0.25, ay * 0.75 + by * 0.25)
+        out.push(ax * 0.25 + bx * 0.75, ay * 0.25 + by * 0.75)
+      }
+      return out
+    }
+
+    /** Moore 이웃 경계추적: region(1=내부)의 외곽선을 픽셀 폴리곤 [x0,y0,...]으로. */
+    function traceContour(region: Uint8Array, W: number, H: number): number[] {
+      let start = -1
+      for (let i = 0; i < W * H; i++)
+        if (region[i]) {
+          start = i
+          break
+        }
+      if (start < 0) return []
+      const dirs = [
+        [1, 0],
+        [1, 1],
+        [0, 1],
+        [-1, 1],
+        [-1, 0],
+        [-1, -1],
+        [0, -1],
+        [1, -1],
+      ]
+      const inReg = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H && !!region[y * W + x]
+      const sx = start % W,
+        sy = (start / W) | 0
+      const contour: number[] = []
+      let cx = sx,
+        cy = sy,
+        back = 4
+      const max = W * H * 4
+      let count = 0
+      do {
+        contour.push(cx, cy)
+        let found = false
+        for (let k = 0; k < 8; k++) {
+          const d = (back + 1 + k) % 8
+          const nx = cx + dirs[d][0],
+            ny = cy + dirs[d][1]
+          if (inReg(nx, ny)) {
+            back = (d + 4) % 8
+            cx = nx
+            cy = ny
+            found = true
+            break
+          }
+        }
+        if (!found) break
+        count++
+      } while ((cx !== sx || cy !== sy) && count < max)
+      return contour
     }
 
     let firstLayout = true
@@ -321,53 +530,159 @@ export default function InfiniteCanvas() {
         }
       }
 
-      // ── 잉크 획: 노드 위에 얹어 그림(주석처럼). 중점 스무딩 + 펜 종류별 질감. ──
-      const paintStroke = (pts: number[], color: string, width: number, kind?: string) => {
+      // ── 잉크: 오프스크린 레이어에 선·채우기를 그리고 '지움 자국'으로 픽셀을 파낸 뒤 합성 ──
+      // (진짜 지우개처럼 픽셀 단위로 지워짐 → 굵은획/가운데/구멍 OK, 실시간, 흔들림 없음)
+      const paintStroke = (
+        g: CanvasRenderingContext2D,
+        pts: number[],
+        color: string,
+        width: number,
+        kind?: string,
+      ) => {
         if (pts.length < 2) return
         const lw = Math.max(1, width * c.zoom)
-        ctx.save()
-        // 형광펜=반투명·평평한 끝 / 연필=살짝 흐리게 / 펜=선명
+        g.save()
         if (kind === 'highlighter') {
-          ctx.globalAlpha = 0.4
-          ctx.lineCap = 'butt'
+          g.globalAlpha = 0.4
+          g.lineCap = 'butt'
         } else {
-          ctx.globalAlpha = kind === 'pencil' ? 0.85 : 1
-          ctx.lineCap = 'round'
+          g.globalAlpha = kind === 'pencil' ? 0.85 : 1
+          g.lineCap = 'round'
         }
-        ctx.lineJoin = 'round'
+        g.lineJoin = 'round'
         if (pts.length === 2) {
-          const q = w2s(pts[0], pts[1]) // 점 하나(톡) = 작은 원점
-          ctx.fillStyle = color
-          ctx.beginPath()
-          ctx.arc(q.x, q.y, lw / 2, 0, Math.PI * 2)
-          ctx.fill()
-          ctx.restore()
+          const q = w2s(pts[0], pts[1])
+          g.fillStyle = color
+          g.beginPath()
+          g.arc(q.x, q.y, lw / 2, 0, Math.PI * 2)
+          g.fill()
+          g.restore()
           return
         }
-        ctx.strokeStyle = color
-        ctx.lineWidth = lw
-        ctx.beginPath()
+        g.strokeStyle = color
+        g.lineWidth = lw
+        g.beginPath()
         const first = w2s(pts[0], pts[1])
-        ctx.moveTo(first.x, first.y)
-        // 각 점을 제어점으로, 이웃 중점까지 2차 베지어 → 꺾임 없이 부드럽게
+        g.moveTo(first.x, first.y)
         const n = pts.length / 2
         for (let i = 1; i < n - 1; i++) {
           const cur = w2s(pts[i * 2], pts[i * 2 + 1])
           const nx = w2s(pts[(i + 1) * 2], pts[(i + 1) * 2 + 1])
-          ctx.quadraticCurveTo(cur.x, cur.y, (cur.x + nx.x) / 2, (cur.y + nx.y) / 2)
+          g.quadraticCurveTo(cur.x, cur.y, (cur.x + nx.x) / 2, (cur.y + nx.y) / 2)
         }
         const last = w2s(pts[(n - 1) * 2], pts[(n - 1) * 2 + 1])
-        ctx.lineTo(last.x, last.y)
-        ctx.stroke()
-        ctx.restore()
+        g.lineTo(last.x, last.y)
+        g.stroke()
+        g.restore()
       }
+      const drawFillShape = (
+        g: CanvasRenderingContext2D,
+        s: { pts: number[]; color: string; kind?: string },
+      ) => {
+        g.save()
+        g.globalAlpha = s.kind === 'highlighter' ? 0.4 : 1 // 일반 채움은 불투명(덮어쓰기 깔끔)
+        g.fillStyle = s.color
+        g.beginPath()
+        const f0 = w2s(s.pts[0], s.pts[1])
+        g.moveTo(f0.x, f0.y)
+        for (let i = 2; i < s.pts.length; i += 2) {
+          const q = w2s(s.pts[i], s.pts[i + 1])
+          g.lineTo(q.x, q.y)
+        }
+        g.closePath()
+        g.fill()
+        g.restore()
+      }
+      const drawEraseMark = (g: CanvasRenderingContext2D, pts: number[], width: number) => {
+        const lw = Math.max(1, width * c.zoom)
+        g.strokeStyle = '#000'
+        g.fillStyle = '#000'
+        g.lineCap = 'round'
+        g.lineJoin = 'round'
+        g.lineWidth = lw
+        const first = w2s(pts[0], pts[1])
+        if (pts.length >= 4) {
+          g.beginPath()
+          g.moveTo(first.x, first.y)
+          for (let i = 2; i < pts.length; i += 2) {
+            const q = w2s(pts[i], pts[i + 1])
+            g.lineTo(q.x, q.y)
+          }
+          g.stroke()
+        }
+        g.beginPath() // 시작점/톡 = 원
+        g.arc(first.x, first.y, lw / 2, 0, Math.PI * 2)
+        g.fill()
+      }
+
       const selStrokes = getSelectedStrokeIds()
       const curStrokes = strokesInCurrentSpace()
-      for (const s of curStrokes) paintStroke(s.pts, s.color, s.width, s.kind)
-      // 그리는 중인 획(아직 미확정)도 실시간으로
-      const liveKind = getInkMode()
-      if (mode === 'ink' && isDrawKind(liveKind) && inkPts.length >= 2)
-        paintStroke(inkPts, getPenColor(), getPenWidth(), liveKind)
+      if (ictx && fctx) {
+        if (inkLayer.width !== canvas.width || inkLayer.height !== canvas.height) {
+          inkLayer.width = canvas.width
+          inkLayer.height = canvas.height
+          frameLayer.width = canvas.width
+          frameLayer.height = canvas.height
+          strokeLayer.width = canvas.width
+          strokeLayer.height = canvas.height
+        }
+        // 올가미 이동/크기조절은 매 프레임 획이 바뀌므로 캐시 무효화(그 외엔 카메라·doc버전으로 판단)
+        const liveMutating = mode === 'lassomove' || mode === 'lassoresize'
+        // 획 개수도 키에 포함 → 획 지우개가 획을 지우는 '즉시' 캐시 갱신(버전 안 올려도)
+        const key = `${c.x}|${c.y}|${c.zoom}|${canvas.width}|${canvas.height}|${getCurrentSpace()}|${getSnapshot()}|${curStrokes.length}`
+        if (liveMutating || key !== inkCacheKey) {
+          // 확정 잉크 캐시 재생성(생성 순서대로: 지움 자국은 그 전 것만 파냄)
+          // ① 채우기 레이어(inkLayer): 채우기 + 지움 자국(생성순) → 지운 뒤 채운 fill 살아남음
+          ictx.setTransform(dpr, 0, 0, dpr, 0, 0)
+          ictx.clearRect(0, 0, W, H)
+          for (const s of curStrokes) {
+            if (s.erase) {
+              ictx.globalCompositeOperation = 'destination-out'
+              drawEraseMark(ictx, s.pts, s.width)
+              ictx.globalCompositeOperation = 'source-over'
+            } else if (s.fill && s.pts.length >= 6) drawFillShape(ictx, s)
+          }
+          // ② 선 레이어(strokeLayer): 선 + 지움 자국(생성순) → 지운 뒤 그린 선 살아남음
+          if (sctx) {
+            sctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+            sctx.clearRect(0, 0, W, H)
+            for (const s of curStrokes) {
+              if (s.erase) {
+                sctx.globalCompositeOperation = 'destination-out'
+                drawEraseMark(sctx, s.pts, s.width)
+                sctx.globalCompositeOperation = 'source-over'
+              } else if (!s.fill) paintStroke(sctx, s.pts, s.color, s.width, s.kind)
+            }
+            // 선 레이어를 채우기 위에 얹음 → 채우기가 선 밑으로 가 넘침 안 보임
+            ictx.setTransform(1, 0, 0, 1, 0, 0)
+            ictx.drawImage(strokeLayer, 0, 0)
+            ictx.setTransform(dpr, 0, 0, dpr, 0, 0)
+          }
+          inkCacheKey = liveMutating ? '' : key // 이동 중엔 무효로 둬 다음 프레임도 재생성
+        }
+        // 그리는 중인 획/지우는 자국 = 캐시 위에 '하나만' 얹어 합성(전체 재렌더 X → 렉 없음)
+        const liveKind = getInkMode()
+        const liveDraw = mode === 'ink' && isDrawKind(liveKind) && inkPts.length >= 2
+        const liveErase = mode === 'ink' && inkErasing && inkPts.length >= 2
+        let layer = inkLayer
+        if (liveDraw || liveErase) {
+          fctx.setTransform(1, 0, 0, 1, 0, 0)
+          fctx.clearRect(0, 0, canvas.width, canvas.height)
+          fctx.drawImage(inkLayer, 0, 0)
+          fctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+          if (liveDraw) paintStroke(fctx, inkPts, getPenColor(), getPenWidth(), liveKind)
+          if (liveErase) {
+            fctx.globalCompositeOperation = 'destination-out'
+            drawEraseMark(fctx, inkPts, getPenWidth())
+            fctx.globalCompositeOperation = 'source-over'
+          }
+          layer = frameLayer
+        }
+        ctx.save()
+        ctx.setTransform(1, 0, 0, 1, 0, 0)
+        ctx.drawImage(layer, 0, 0)
+        ctx.restore()
+      }
       // 올가미로 선택된 획: 초록 하이라이트(윤곽)
       if (selStrokes.size) {
         for (const s of curStrokes) {
@@ -398,6 +713,16 @@ export default function InfiniteCanvas() {
           ctx.setLineDash([6, 4])
           ctx.strokeRect(tl.x - 4, tl.y - 4, br.x - tl.x + 8, br.y - tl.y + 8)
           ctx.setLineDash([])
+          // 코너 리사이즈 핸들(흰 원 4개) — 잡고 끌면 크기 조절
+          ctx.fillStyle = '#fff'
+          ctx.strokeStyle = '#3ddc7f'
+          ctx.lineWidth = 1.5
+          for (const cn of [tl, { x: br.x, y: tl.y }, { x: tl.x, y: br.y }, br]) {
+            ctx.beginPath()
+            ctx.arc(cn.x, cn.y, 5, 0, Math.PI * 2)
+            ctx.fill()
+            ctx.stroke()
+          }
           // 삭제 버튼(빨간 원 + ×) — 박스 우상단. onDown 히트영역과 좌표 일치.
           const trx = br.x + 16
           const trY = tl.y - 16
@@ -436,7 +761,7 @@ export default function InfiniteCanvas() {
         ctx.lineWidth = 1.5
         ctx.setLineDash([4, 3])
         ctx.beginPath()
-        ctx.arc(inkCursor.x, inkCursor.y, ERASER_PX, 0, Math.PI * 2)
+        ctx.arc(inkCursor.x, inkCursor.y, Math.max(2, getEraserRadius() * c.zoom), 0, Math.PI * 2)
         ctx.stroke()
         ctx.setLineDash([])
       }
@@ -950,8 +1275,9 @@ export default function InfiniteCanvas() {
         const it = list[i]
         if (excludePid && it.pid === excludePid) continue
         const p = w2s(it.x, it.y)
-        // 사진·도형은 히트영역을 중앙으로 좁혀 "중심을 눌러야" 선택(큰 사진의 삼킴 방지)
-        const shrink = it.type === 'photo' || it.type === 'shape' ? SEL_HIT_SHRINK : 1
+        // 도형은 히트영역을 중앙으로 좁혀 "중심을 눌러야" 선택(큰 도형의 삼킴 방지).
+        // 사진은 가장자리 클릭도 선택되도록 전체 영역 사용(스플라인 연결점 등도 끝까지 잡힘).
+        const shrink = it.type === 'shape' ? SEL_HIT_SHRINK : 1
         const hw = Math.max((it.w / 2) * c.zoom * shrink, MIN_GRAB_PX)
         const hh = Math.max((it.h / 2) * c.zoom * shrink, MIN_GRAB_PX)
         let dx = sx - p.x
@@ -986,6 +1312,7 @@ export default function InfiniteCanvas() {
       | 'ink'
       | 'lasso'
       | 'lassomove'
+      | 'lassoresize'
       | 'lineedit'
       | 'jointrotate'
       | 'groupresize' = 'none'
@@ -996,16 +1323,34 @@ export default function InfiniteCanvas() {
     let inkPts: number[] = []
     let inkErasedAny = false
     let inkCursor: { x: number; y: number } | null = null
+    let lastEraseW: { x: number; y: number } | null = null // 획 지우개: 직전 지운 위치(월드) → 선분으로 이어 지움
+    let inkErasing = false // area 지우개로 지움 자국을 '그리는 중'(inkPts에 경로 누적)
+    // 확정 잉크 캐시 레이어(카메라·내용 바뀔 때만 재생성 → 그리는 중엔 재렌더 안 함, 렉 방지)
+    const inkLayer = document.createElement('canvas')
+    const ictx = inkLayer.getContext('2d')
+    let inkCacheKey = '' // 캐시 유효성 키(카메라·크기·공간·doc버전)
+    // 프레임 합성용(캐시 + 지금 그리는 획 하나)
+    const frameLayer = document.createElement('canvas')
+    const fctx = frameLayer.getContext('2d')
+    // 선 레이어(채우기 위에 얹음). 채우기·선을 따로 그려 각각 지우개 적용 → 넘침X + 지운뒤 재채움 둘 다.
+    const strokeLayer = document.createElement('canvas')
+    const sctx = strokeLayer.getContext('2d')
     // 터치로 그릴 때: 손가락이 살짝 움직이기 전까진 획을 '대기'(월드 시작점만 보관).
     // 그 사이 두 번째 손가락이 오면 pinch(팬/줌)로 넘어가 그림이 안 그려짐. 마우스·스타일러스는 즉시 그림.
     let inkTouchPending: { wx: number; wy: number } | null = null
     // 우클릭 임시 지우개(펜 활성 중 우클릭 드래그 = 마지막에 고른 지우개로 지움)
     let rightErase = false
-    const ERASER_PX = 16 // 지우개 반경(화면 px) — 줌과 무관하게 손끝 느낌 일정
     // 올가미: 그리는 중인 폴리곤(월드 점열) / 선택 이동 시작점(월드) / 이번 드래그 이동 여부
     let lassoPts: number[] = []
     let lassoLast: { x: number; y: number } | null = null
     let lassoMoved = false
+    // 올가미 선택 리사이즈: 고정점(반대 코너 월드) + 시작거리 + 선택 획 원본 스냅샷
+    let lassoResize: {
+      pivotX: number
+      pivotY: number
+      startDist: number
+      snap: { id: string; pts: number[]; width: number }[]
+    } | null = null
     // 코너 리사이즈: 고정점(anchor 월드좌표) + 방향부호(sx,sy) + 비율잠금 + 노드 회전각(rad)
     let resizeOp: {
       pid: string
@@ -1292,9 +1637,9 @@ export default function InfiniteCanvas() {
           rightErase = true
           inkCursor = p
           const w = s2w(p.x, p.y)
-          const r = ERASER_PX / getCamera().zoom
-          inkErasedAny =
-            getLastEraser() === 'erasePart' ? erasePartNear(w.x, w.y, r) : eraseStrokesNear(w.x, w.y, r)
+          const r = getEraserRadius()
+          inkErasedAny = eraseStrokesNear(w.x, w.y, w.x, w.y, r) // 우클릭 = 획 통째 지우개
+          lastEraseW = { x: w.x, y: w.y }
           markDirty()
         }
         return // 컨텍스트 메뉴는 열지 않음(onContextMenu가 잉크 중엔 막음)
@@ -1345,13 +1690,19 @@ export default function InfiniteCanvas() {
         return
       }
 
+      // 화면이동(손) 도구: 한 손가락/드래그 = 화면 이동(그리기·선택 무시). Space 팬과 동일.
+      if (getPanTool() && e.button !== 2) {
+        mode = 'pan'
+        dragItem = null
+        return
+      }
+
       // 잉크 모드: 이 드래그가 필기/지우기/올가미가 됨(다른 조작 무시).
       // 단, Space 누름 / 가운데(휠)버튼이면 그리지 말고 아래 팬 핸들러로 넘김(화면 이동).
       const ink = getInkMode()
       if (ink && !spaceHeld && e.button !== 1) {
         dragItem = null
         const w = s2w(p.x, p.y)
-        const rz = getCamera().zoom
         if (isDrawKind(ink)) {
           mode = 'ink'
           if (e.pointerType === 'touch') {
@@ -1364,9 +1715,14 @@ export default function InfiniteCanvas() {
         } else if (ink === 'eraser' || ink === 'erasePart') {
           mode = 'ink'
           inkCursor = p
-          const r = ERASER_PX / rz
-          inkErasedAny =
-            ink === 'erasePart' ? erasePartNear(w.x, w.y, r) : eraseStrokesNear(w.x, w.y, r)
+          const r = getEraserRadius()
+          if (ink === 'erasePart') {
+            inkErasing = true // 지움 자국을 그리기 시작(실시간 destination-out)
+            inkPts = [w.x, w.y]
+          } else {
+            inkErasedAny = eraseStrokesNear(w.x, w.y, w.x, w.y, r) // 획 통째 지우개
+            lastEraseW = { x: w.x, y: w.y }
+          }
         } else if (ink === 'lasso') {
           const bb = selectedStrokesBBox()
           if (bb) {
@@ -1377,6 +1733,29 @@ export default function InfiniteCanvas() {
               mode = 'none'
               markDirty()
               return
+            }
+            // 코너 핸들 잡았나? → 크기 조절(반대 코너 고정, 거리비율 균일 스케일)
+            const corners: [number, number][] = [
+              [bb.x0, bb.y0],
+              [bb.x1, bb.y0],
+              [bb.x0, bb.y1],
+              [bb.x1, bb.y1],
+            ]
+            for (const [cxw, cyw] of corners) {
+              const sc = w2s(cxw, cyw)
+              if (Math.hypot(p.x - sc.x, p.y - sc.y) <= 11) {
+                const pivotX = cxw === bb.x0 ? bb.x1 : bb.x0
+                const pivotY = cyw === bb.y0 ? bb.y1 : bb.y0
+                lassoResize = {
+                  pivotX,
+                  pivotY,
+                  startDist: Math.max(1, Math.hypot(w.x - pivotX, w.y - pivotY)),
+                  snap: getSelectedStrokesSnapshot(),
+                }
+                mode = 'lassoresize'
+                markDirty()
+                return
+              }
             }
             // 선택 박스 안을 눌렀으면 → 이동
             if (w.x >= bb.x0 && w.x <= bb.x1 && w.y >= bb.y0 && w.y <= bb.y1) {
@@ -1391,6 +1770,11 @@ export default function InfiniteCanvas() {
           clearStrokeSelection()
           mode = 'lasso'
           lassoPts = [w.x, w.y]
+        } else if (ink === 'fill') {
+          // 채우기: 클릭한 곳이 획으로 닫힌 영역이면 그 안을 현재 색으로 채움(즉시)
+          const poly = computeFillPolygon(p.x, p.y)
+          if (poly) addFill(poly, getPenColor())
+          mode = 'none'
         }
         markDirty()
         return
@@ -1622,13 +2006,13 @@ export default function InfiniteCanvas() {
         const samples = evs.length ? evs : [e]
         // 우클릭 임시 지우개: 펜 종류와 무관하게 마지막 지우개로 지움
         if (rightErase) {
-          const r = ERASER_PX / getCamera().zoom
-          const part = getLastEraser() === 'erasePart'
+          const r = getEraserRadius()
           for (const ce of samples) {
             const lp = localPos(ce)
             const w = s2w(lp.x, lp.y)
-            const did = part ? erasePartNear(w.x, w.y, r) : eraseStrokesNear(w.x, w.y, r)
-            if (did) inkErasedAny = true
+            const f = lastEraseW ?? w
+            if (eraseStrokesNear(f.x, f.y, w.x, w.y, r)) inkErasedAny = true
+            lastEraseW = w
           }
           inkCursor = p
           markDirty()
@@ -1659,12 +2043,24 @@ export default function InfiniteCanvas() {
             inkPts.push(w.x, w.y)
           }
         } else {
-          const r = ERASER_PX / getCamera().zoom
-          for (const ce of samples) {
-            const lp = localPos(ce)
-            const w = s2w(lp.x, lp.y)
-            const did = im === 'erasePart' ? erasePartNear(w.x, w.y, r) : eraseStrokesNear(w.x, w.y, r)
-            if (did) inkErasedAny = true
+          const r = getEraserRadius()
+          if (im === 'erasePart') {
+            for (const ce of samples) {
+              const lp = localPos(ce)
+              const w = s2w(lp.x, lp.y)
+              const n = inkPts.length
+              if (n >= 2 && Math.hypot(w.x - inkPts[n - 2], w.y - inkPts[n - 1]) < 0.5 / getCamera().zoom)
+                continue
+              inkPts.push(w.x, w.y) // 지움 자국 경로 누적(실시간 렌더)
+            }
+          } else {
+            for (const ce of samples) {
+              const lp = localPos(ce)
+              const w = s2w(lp.x, lp.y)
+              const f = lastEraseW ?? w
+              if (eraseStrokesNear(f.x, f.y, w.x, w.y, r)) inkErasedAny = true
+              lastEraseW = w
+            }
           }
           inkCursor = p
         }
@@ -1683,6 +2079,14 @@ export default function InfiniteCanvas() {
         const w = s2w(p.x, p.y)
         moveSelectedStrokesBy(w.x - lassoLast.x, w.y - lassoLast.y)
         lassoLast = w
+        lassoMoved = true
+        markDirty()
+        return
+      }
+      if (mode === 'lassoresize' && lassoResize) {
+        const w = s2w(p.x, p.y)
+        const k = Math.hypot(w.x - lassoResize.pivotX, w.y - lassoResize.pivotY) / lassoResize.startDist
+        applyStrokeScale(lassoResize.snap, lassoResize.pivotX, lassoResize.pivotY, Math.max(0.05, k))
         lassoMoved = true
         markDirty()
         return
@@ -1954,6 +2358,8 @@ export default function InfiniteCanvas() {
           const im = getInkMode()
           if (isDrawKind(im)) {
             addStroke(inkPts, getPenColor(), getPenWidth(), im) // 획 확정(되돌리기 1스텝 + 저장)
+          } else if (im === 'erasePart') {
+            if (inkErasing && inkPts.length >= 2) addEraseMark(inkPts, getPenWidth()) // 지움 자국 확정
           } else if (inkErasedAny) {
             commitStrokes() // 지운 게 있으면 1스텝으로 확정
           }
@@ -1963,6 +2369,8 @@ export default function InfiniteCanvas() {
         lassoSelectStrokes(lassoPts) // 폴리곤(자동 닫힘) 안의 획 선택
       } else if (mode === 'lassomove') {
         if (lassoMoved) commitStrokes() // 이동했으면 되돌리기 1스텝 확정
+      } else if (mode === 'lassoresize') {
+        if (lassoMoved) commitStrokes() // 크기 조절했으면 확정
       } else if (mode === 'lineedit' && lineOp) {
         commitMove(lineOp.pid) // 각도·길이·회전 확정(되돌리기 1스텝 + 저장)
       } else if (mode === 'jointrotate' && jointOp) {
@@ -1998,13 +2406,16 @@ export default function InfiniteCanvas() {
       jointOp = null
       groupResizeOp = null
       inkPts = []
+      inkErasing = false
       inkErasedAny = false
       inkCursor = null
+      lastEraseW = null
       inkTouchPending = null
       rightErase = false
       lassoPts = []
       lassoLast = null
       lassoMoved = false
+      lassoResize = null
       markDirty()
 
       if (pointers.size === 0) {
@@ -2084,6 +2495,7 @@ export default function InfiniteCanvas() {
         } else if (getInkMode()) {
           inkPts = []
           inkErasedAny = false
+          inkErasing = false
           inkCursor = null
           inkTouchPending = null
           if (mode === 'ink' || mode === 'lasso' || mode === 'lassomove') mode = 'none'

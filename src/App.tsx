@@ -227,7 +227,7 @@ export default function App() {
           {!isMobile || getEditOpen() ? (
             <Inspector onRequestDelete={requestDelete} onCreateComponent={requestCreateComponent} />
           ) : editTextPid ? null : (
-            <ObjectActions />
+            <ObjectActions onRequestDelete={requestDelete} />
           )}
           {/* 모바일: 개체 선택 중에도 우상단 좌표바 유지 */}
           {isMobile && <ViewPanel />}

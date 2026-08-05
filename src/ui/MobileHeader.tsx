@@ -1,13 +1,12 @@
 import { useState } from 'react'
-import { breadcrumb, canRedo, canUndo, getUniverseName, goTo, redo, setUniverseName, undo } from '../store'
+import { breadcrumb, getUniverseName, goTo } from '../store'
 import BrandButton from './BrandButton'
-import PromptModal from './PromptModal'
 import * as S from './MobileHeader.styles'
 
-// 모바일 상단 바: [Simpra 로고] · [중앙 현재 폴더 ▾ 드롭다운] · [Undo/Redo]
+// 모바일 상단 바: [Simpra 로고 + (폴더 안일 때) ↰ 동그라미] · [중앙 폴더명 ▾] · [Undo/Redo]
+// 유니버스명 수정은 ⋯ Setting 팝업으로 이동(여기선 이름만 표시).
 export default function MobileHeader() {
   const [open, setOpen] = useState(false)
-  const [editName, setEditName] = useState<string | null>(null) // 유니버스명 수정 프롬프트
   const path = breadcrumb()
   const currentName = path.length ? path[path.length - 1].name : getUniverseName()
 
@@ -25,20 +24,19 @@ export default function MobileHeader() {
 
   return (
     <S.Bar>
-      <S.Side>
-        <BrandButton label="Simpra" />
-      </S.Side>
+      <S.LeftStack>
+        {canUp ? (
+          // 폴더 안: Simpra 대신 상위 폴더로 나가기 버튼
+          <S.UpCircle onClick={() => goTo(parentId)} title="상위 폴더로 나가기">
+            ↰
+          </S.UpCircle>
+        ) : (
+          // 최상단: Simpra 로고
+          <BrandButton label="Simpra" />
+        )}
+      </S.LeftStack>
 
       <S.Center>
-        {canUp ? (
-          <S.UpBtn onClick={() => goTo(parentId)} title="상위 폴더로">
-            ↰
-          </S.UpBtn>
-        ) : (
-          <S.UpBtn onClick={() => setEditName(getUniverseName())} title="유니버스 이름 수정">
-            ✎
-          </S.UpBtn>
-        )}
         <S.FolderBtn onClick={() => setOpen((v) => !v)} title="Switch folder">
           <span className="nm">{currentName}</span>
           <span className="car">▾</span>
@@ -62,28 +60,8 @@ export default function MobileHeader() {
         )}
       </S.Center>
 
-      <S.Side>
-        <S.IconBtn onClick={undo} disabled={!canUndo()} title="Undo">
-          ↶
-        </S.IconBtn>
-        <S.IconBtn onClick={redo} disabled={!canRedo()} title="Redo">
-          ↷
-        </S.IconBtn>
-      </S.Side>
-
-      {editName !== null && (
-        <PromptModal
-          title="Universe name"
-          initial={editName}
-          okLabel="Save"
-          onSubmit={(v) => {
-            const name = v.trim()
-            if (name) setUniverseName(name)
-            setEditName(null)
-          }}
-          onCancel={() => setEditName(null)}
-        />
-      )}
+      {/* 우측: ⋯ Setting 버튼이 Toolbar에서 corner 고정으로 여기에 뜸(자리만 비워둠) */}
+      <S.Side />
     </S.Bar>
   )
 }

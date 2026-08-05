@@ -6,18 +6,42 @@ export const Bar = styled.div`
   position: relative;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
-  align-items: center;
+  align-items: center; /* 로고·제목·우측 상하 중앙 정렬(↰는 로고 밑 absolute라 행 높이 안 늘림) */
   gap: 8px;
-  padding: 6px 8px;
-  & > :last-child {
-    justify-self: end; /* Undo/Redo는 우측 끝 */
+  padding: 8px;
+`
+
+// 좌측: Simpra 로고 (그 아래 ↰ 동그라미는 absolute로 띄워 행 정렬을 안 깨뜨림)
+export const LeftStack = styled.div`
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+`
+
+// 상위 폴더로 나가기 — 폴더 안에서 Simpra 자리에 뜨는 동그라미(인라인)
+export const UpCircle = styled.button`
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: #1b2030;
+  border: 1px solid #2b3346;
+  color: #dbe3f4;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  &:active {
+    background: #232b41;
   }
 `
 
 export const Side = styled.div`
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
   overflow: hidden;
 `
@@ -25,7 +49,7 @@ export const Side = styled.div`
 // 중앙 현재 폴더 (드롭다운 트리거) — 고정폭, 길면 …, 드롭다운이 툴바보다 위(z-index)
 export const Center = styled.div`
   justify-self: center;
-  width: 210px;
+  width: min(52vw, 220px); /* 우측(⋯) 고정이라 자리 넓어짐 → 제목 길게 */
   display: flex;
   justify-content: center;
   position: relative;
@@ -41,15 +65,14 @@ export const FolderBtn = styled.button`
   background: none;
   border: none;
   color: #e8ecf3;
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 700;
   cursor: pointer;
-  padding: 4px 8px;
+  padding: 5px 8px;
   border-radius: 8px;
   > .nm {
-    flex: 1;
+    flex: 0 1 auto; /* 내용만큼만(길면 …) → ▾가 이름 바로 옆에 붙음 */
     min-width: 0;
-    text-align: center;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -57,7 +80,7 @@ export const FolderBtn = styled.button`
   > .car {
     flex: none;
     color: #8b95a8;
-    font-size: 12px;
+    font-size: 13px;
   }
   &:active {
     background: #ffffff14;
@@ -73,7 +96,7 @@ export const UpBtn = styled.button`
   background: none;
   border: none;
   color: #8b95a8;
-  font-size: 20px;
+  font-size: 22px;
   line-height: 1;
   padding: 4px 6px;
   border-radius: 8px;
@@ -131,14 +154,14 @@ export const Overlay = styled.div`
 
 export const IconBtn = styled.button`
   flex: none;
-  width: 34px;
-  height: 34px;
+  width: 40px;
+  height: 40px;
   background: #1b2030;
   border: 1px solid #2b3346;
   color: #dbe3f4;
-  border-radius: 8px;
+  border-radius: 9px;
   cursor: pointer;
-  font-size: 15px;
+  font-size: 18px;
   &:disabled {
     opacity: 0.4;
   }
