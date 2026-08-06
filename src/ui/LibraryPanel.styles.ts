@@ -126,23 +126,25 @@ export const PathLabel = styled.span`
   text-overflow: ellipsis;
 `
 
+// 상태 동그라미: 캔버스에 노출(활성)=초록, 보관(숨김)=빨강.
 export const Badge = styled.span<{ $exposed?: boolean }>`
   flex: none;
-  font-size: ${(p) => (p.$exposed ? '8px' : '12px')};
-  color: ${(p) => (p.$exposed ? '#34c98a' : '#c9a227')};
+  font-size: 10px;
+  color: ${(p) => (p.$exposed ? '#3ddc7f' : '#ff5d5d')};
 `
 
-export const UseBtn = styled.button`
+// Use/Hide 토글 버튼. $hide=현재 노출됨 → 빨강 'Hide'(숨기기). 아니면 초록 'Use'(꺼내기).
+export const UseBtn = styled.button<{ $hide?: boolean }>`
   flex: none;
-  background: #10311f;
-  border: 1px solid #41506e;
-  color: #c2f0d4;
+  background: ${(p) => (p.$hide ? '#3a1720' : '#10311f')};
+  border: 1px solid ${(p) => (p.$hide ? '#8a3a48' : '#3ddc7f')};
+  color: ${(p) => (p.$hide ? '#ff9aa8' : '#7cffb0')};
   border-radius: 7px;
   padding: 2px 8px;
   font-size: 11px;
   cursor: pointer;
   &:hover {
-    border-color: #3ddc7f;
+    filter: brightness(1.18);
   }
 `
 

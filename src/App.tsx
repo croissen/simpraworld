@@ -60,7 +60,9 @@ export default function App() {
   const [delCount, setDelCount] = useState<number | null>(null) // 노드 삭제 확인(선택 N개)
   const [delComp, setDelComp] = useState<ComponentDef | null>(null)
   const [compName, setCompName] = useState<string | null>(null) // 컴포넌트 이름 입력 프롬프트
-  const isMobile = useIsMobile()
+  const isMobile = useIsMobile() // 폭(≤640) — 헤더 레이아웃(세로폰=모바일 헤더)용
+  // 터치기기(가로폰·태블릿 포함) — 개체 선택 시 4버튼(ObjectActions) vs PC 상세패널(Inspector) 판단용
+  const touch = useIsMobile('(hover: none) and (pointer: coarse)')
 
   useEffect(() => {
     init()
@@ -224,13 +226,13 @@ export default function App() {
         <>
           {/* 모바일은 개체의 액션 버튼을 눌러야(editOpen) 편집 패널이 뜸. PC는 선택 즉시. */}
           {/* 텍스트 입력 중엔 플로팅 액션바(⚙·✎·→)를 숨김 — 카메라 따라 덜그럭거려서 정신없음 */}
-          {!isMobile || getEditOpen() ? (
+          {!touch || getEditOpen() ? (
             <Inspector onRequestDelete={requestDelete} onCreateComponent={requestCreateComponent} />
           ) : editTextPid ? null : (
             <ObjectActions onRequestDelete={requestDelete} />
           )}
-          {/* 모바일: 개체 선택 중에도 우상단 좌표바 유지 */}
-          {isMobile && <ViewPanel />}
+          {/* 터치기기: 개체 선택 중에도 우상단 좌표바 유지 */}
+          {touch && <ViewPanel />}
         </>
       ) : (
         <ViewPanel />
@@ -287,11 +289,6 @@ export default function App() {
           onCancel={() => setCompName(null)}
         />
       )}
-      <S.Hint>
-        Drag empty = select box · Space/middle-drag = pan · Wheel = zoom · Shift-click = multi ·
-        Ctrl+A/C/V · Ctrl+Z undo / Ctrl+Y redo · Double-click folder = open · Drag onto folder = move
-        in · Ctrl+Alt-click/drag = connect line
-      </S.Hint>
     </S.AppRoot>
   )
 }

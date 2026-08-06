@@ -70,7 +70,10 @@ let committedJSON = '' // 마지막으로 확정된 (슬림) doc 상태
 let historyReady = false // init 완료 전엔 기록하지 않음
 let dirty = false // 마지막 저장/열기/새로만들기 이후 내용이 바뀌었는지(저장 안 한 변경)
 const assetMem = new Map<string, Asset>() // id별 이미지 원본 1벌 보관(히스토리 복원용)
-export const canUndo = () => past.length > 0
+// 노트 편집 중 undo 바닥: 노트에 들어온 순간의 past 깊이. 그 아래로는 undo 금지
+// (노트 생성/이전 작업까지 롤백돼 노트가 사라지며 팅기는 것 방지). 노트 밖이면 null.
+let noteUndoFloor: number | null = null
+export const canUndo = () => past.length > (noteUndoFloor ?? 0)
 export const canRedo = () => future.length > 0
 
 // 현재 doc/컴포넌트의 모든 에셋을 id로 기억(복원 때 다시 채울 수 있게)
@@ -141,6 +144,7 @@ function applyDocSnapshot(json: string) {
 
 export function undo() {
   if (!past.length) return
+  if (noteUndoFloor !== null && past.length <= noteUndoFloor) return // 노트 안: 바닥 밑으로 막음
   future.push(committedJSON)
   applyDocSnapshot(past.pop()!)
 }
@@ -372,11 +376,14 @@ export const getNoteEditorPid = () => noteEditorPid
 export function openNote(nodeId: string, pid: string | null = null) {
   noteEditorNodeId = nodeId
   noteEditorPid = pid
+  noteUndoFloor = past.length // 이 순간을 undo 바닥으로 → 이후 필기만 undo 가능
+  future = [] // 노트 밖에서 남은 redo가 노트 안으로 새어들지 않게
   bumpUI()
 }
 export function closeNote() {
   noteEditorNodeId = null
   noteEditorPid = null
+  noteUndoFloor = null // 노트 밖: undo 전역 복귀
   bumpUI()
 }
 
@@ -459,10 +466,44 @@ export const isDrawKind = (m: InkMode): m is InkKind => DRAW_KINDS.has(m)
 let inkMode: InkMode = null
 let lastEraser: 'eraser' | 'erasePart' = 'eraser' // 마지막에 고른 지우개 종류(우클릭 임시지우개용)
 export const getLastEraser = () => lastEraser
-let penColor = '#ff4d6d' // 펜 색
-let hlColor = '#ffe600' // 형광펜 색(기본 노랑)
-let penWidth = 3 // 펜 굵기(월드 단위). 지우개도 이 값을 공유(같은 크기).
-let hlWidth = 20 // 형광펜 굵기(기본 두껍게 — 밴드처럼)
+// ── 잉크 사용자 취향(로컬 저장, 문서 아님) ───────────────────────────
+// 색: 펜은 컨텍스트별 기본 — '노트 안=검정 / 캔버스=초록' + 각각 따로 기억. 형광펜은 공통(노랑).
+// 굵기: 펜·형광펜·지우개 각각 따로(통일 아님) 기억. 팔레트 위치도 기억.
+const INK_PREF_KEY = 'simpra:inkPrefs'
+type InkPrefs = {
+  penCanvas: string
+  penNote: string
+  hlColor: string
+  penW: number
+  hlW: number
+  eraserW: number
+  palettePos: { x: number; y: number } | null
+}
+const DEFAULT_INK: InkPrefs = {
+  penCanvas: '#3ddc7f', // 캔버스 펜 기본 = 초록
+  penNote: '#111111', // 노트 펜 기본 = 검정
+  hlColor: '#ffe600', // 형광펜 = 노랑
+  penW: 3,
+  hlW: 20,
+  eraserW: 24,
+  palettePos: null,
+}
+let inkPrefs: InkPrefs = loadInkPrefs()
+function loadInkPrefs(): InkPrefs {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(INK_PREF_KEY) : null
+    return raw ? { ...DEFAULT_INK, ...JSON.parse(raw) } : { ...DEFAULT_INK }
+  } catch {
+    return { ...DEFAULT_INK }
+  }
+}
+function saveInkPrefs() {
+  try {
+    localStorage.setItem(INK_PREF_KEY, JSON.stringify(inkPrefs))
+  } catch {
+    /* 사생활 모드 등 localStorage 불가 → 이 세션만 유지 */
+  }
+}
 
 // 최근 사용색(로컬 저장, 최신 우선 최대 8) — 문서가 아니라 사용자 취향
 const RECENT_KEY = 'simpra:recentColors'
@@ -496,6 +537,21 @@ export function setPanTool(v: boolean) {
   bumpUI()
 }
 
+// 핸드모드: 펜 팔레트(잉크모드)가 열려 있을 때 '손가락으로도 그리기'를 켠다.
+// 기본 꺼짐 → 팔레트 열리면 손가락은 화면이동, 펜만 필기. 켜면 손가락도 펜처럼 그림.
+let handMode = false
+export const getHandMode = () => handMode
+export function setHandMode(v: boolean) {
+  handMode = v
+  markDirty()
+  bumpUI()
+}
+
+// 내비 버튼(홈/+/폴더/…)을 누르면 펜을 끈다 — 단, 핸드모드(손가락 필기)일 땐 유지.
+export function leavePenForNav() {
+  if (inkMode && !handMode) setInkMode(null)
+}
+
 export const getInkMode = () => inkMode
 export function setInkMode(m: InkMode) {
   panTool = false // 도구 선택 = 화면이동 해제
@@ -509,11 +565,14 @@ export function setInkMode(m: InkMode) {
   markDirty() // 캔버스 커서/오버레이 즉시 갱신
   bumpUI()
 }
-// 활성 도구의 색: 형광펜이면 형광펜 색, 그 외엔 펜 색.
-export const getInkColor = () => (inkMode === 'highlighter' ? hlColor : penColor)
+// 노트가 열려 있으면 노트 컨텍스트(펜 기본=검정), 아니면 캔버스(펜 기본=초록).
+const penColorKey = (): 'penNote' | 'penCanvas' => (noteEditorNodeId != null ? 'penNote' : 'penCanvas')
+// 활성 도구의 색: 형광펜이면 형광펜 색, 그 외엔 컨텍스트별 펜 색.
+export const getInkColor = () => (inkMode === 'highlighter' ? inkPrefs.hlColor : inkPrefs[penColorKey()])
 export function setInkColor(c: string) {
-  if (inkMode === 'highlighter') hlColor = c
-  else penColor = c
+  if (inkMode === 'highlighter') inkPrefs.hlColor = c
+  else inkPrefs[penColorKey()] = c
+  saveInkPrefs()
   bumpUI()
 }
 // (하위호환) 예전 이름 — 캔버스가 쓰는 색 게터
@@ -523,17 +582,27 @@ export function commitRecentColor() {
   pushRecentColor(getInkColor())
   bumpUI()
 }
-// 활성 도구 굵기: 펜·형광펜·지우개 모두 penWidth 공유(같은 크기로 통일).
-export const getInkWidth = () => penWidth
+// 활성 도구의 굵기: 펜/연필·형광펜·지우개 각각 따로 기억(통일 아님).
+const inkWidthKey = (): 'penW' | 'hlW' | 'eraserW' =>
+  inkMode === 'highlighter' ? 'hlW' : inkMode === 'eraser' || inkMode === 'erasePart' ? 'eraserW' : 'penW'
+export const getInkWidth = () => inkPrefs[inkWidthKey()]
 export function setInkWidth(w: number) {
-  penWidth = Math.max(1, Math.min(100, Math.round(w)))
+  inkPrefs[inkWidthKey()] = Math.max(1, Math.min(100, Math.round(w)))
+  saveInkPrefs()
   bumpUI()
 }
-/** 지우개 반경(월드) — 펜 크기의 절반(펜과 동일 크기 기준). 우클릭 임시지우개도 이 값 사용. */
-export const getEraserRadius = () => penWidth / 2
+/** 지우개 반경(월드) — 지우개 굵기의 절반. 우클릭 임시지우개도 이 값 사용(현재 도구와 무관). */
+export const getEraserRadius = () => inkPrefs.eraserW / 2
 // (하위호환) 예전 이름 — 캔버스가 쓰는 굵기 게터
 export const getPenWidth = getInkWidth
 export const setPenWidth = setInkWidth
+
+// 펜 팔레트 위치 기억(닫았다 열어도 같은 자리). 드래그 끝/최소화 때 저장.
+export const getPalettePos = () => inkPrefs.palettePos
+export function setPalettePos(p: { x: number; y: number }) {
+  inkPrefs.palettePos = p
+  saveInkPrefs()
+}
 
 /** 현재 공간에서 보이는 획들(렌더용). */
 export const strokesInCurrentSpace = (): InkStroke[] => {
@@ -956,12 +1025,31 @@ export function selectionToDoc(): SimpraWorldDoc {
     const sub = nodeToDoc(p.nodeId)
     if (!sub) continue
     for (const sp of sub.placements)
-      if (sp.space === null)
-        (sp.x = p.x), (sp.y = p.y), (sp.locked = p.locked), rootByPid.set(pid, sp.id)
+      if (sp.space === null) {
+        sp.x = p.x
+        sp.y = p.y
+        sp.locked = p.locked
+        sp.groupId = p.groupId // 그룹 유지
+        sp.spineParent = p.spineParent // 관절(척추화) 부모 — 임시로 원본 pid, 아래서 새 루트 id로 교체
+        sp.spineJX = p.spineJX
+        sp.spineJY = p.spineJY
+        rootByPid.set(pid, sp.id)
+      }
     for (const n of sub.nodes) if (!seenNode.has(n.id)) seenNode.add(n.id), out.nodes.push(n)
     for (const a of sub.assets) if (!seenAsset.has(a.id)) seenAsset.add(a.id), out.assets.push(a)
     for (const sp of sub.placements) out.placements.push(sp)
     for (const e of sub.edges) out.edges.push(e) // 폴더 내부 참조선
+  }
+  // 관절 부모를 '함께 복사된' 새 루트 id로 교체 — 부모가 선택에 없으면 관절 끊음(자식만 복사).
+  for (const sp of out.placements) {
+    if (sp.space === null && sp.spineParent) {
+      const parent = rootByPid.get(sp.spineParent)
+      sp.spineParent = parent
+      if (!parent) {
+        sp.spineJX = undefined
+        sp.spineJY = undefined
+      }
+    }
   }
   // 선택한 항목들 사이의 참조선(양 끝이 모두 선택된 배치)을 루트끼리 다시 연결
   for (const e of doc.edges) {
@@ -1151,8 +1239,8 @@ export function useFromLibrary(nodeId: string) {
   if (space !== null && isCyclic(nodeId, space)) return // 폴더 순환 방지
   const existing = doc.placements.find((p) => p.nodeId === nodeId && p.space === space)
   if (existing) {
-    writeStored(existing, false) // 활성 우주에서만 노출로 전환
-    writePos(existing, camera.x, camera.y)
+    // 숨김 해제만 — 원래 있던 좌표 그대로 다시 나타난다(위치를 절대 바꾸지 않음).
+    writeStored(existing, false)
     selection = new Set([existing.id])
   } else {
     const pl: Placement = { id: uid('p'), nodeId, space, x: camera.x, y: camera.y }
@@ -1210,6 +1298,8 @@ export function itemsInCurrentSpace(): SpaceItem[] {
       emphasize: n.emphasize,
       hideName: n.hideName,
       rotation: n.rotation,
+      flipX: n.flipX,
+      flipY: n.flipY,
       fontSize: n.fontSize,
       bold: n.bold,
       align: n.align,
@@ -1330,6 +1420,45 @@ export function addGroupRotLive(gid: string, ddeg: number) {
   const cur = doc.groups[gid]?.rot || 0
   doc.groups[gid] = { rot: ((((cur + ddeg) % 360) + 360) % 360) }
   markDirty()
+}
+
+/** 선택(단일/다중/그룹)을 좌우('x')·위아래('y')로 뒤집기(미러). 중심 기준으로 통째 뒤집음.
+ *  각 개체: 위치를 중심 기준 미러 + 개별 flip 토글 + 회전 부호 반전(반사=회전 -θ) + 관절점 미러. */
+export function flipSelection(axis: 'x' | 'y') {
+  const pls = [...selection].map((pid) => getPlacement(pid)).filter((p): p is Placement => !!p)
+  if (!pls.length) return
+  const centers = pls.map((p) => placementPos(p))
+  let sx = 0
+  let sy = 0
+  for (const c of centers) {
+    sx += c.x
+    sy += c.y
+  }
+  const cx = sx / centers.length
+  const cy = sy / centers.length
+  for (let i = 0; i < pls.length; i++) {
+    const p = pls[i]
+    const n = getNode(p.nodeId)
+    if (!n) continue
+    const pos = centers[i]
+    // 위치를 중심 기준 미러(단일은 자기중심 → 제자리)
+    if (axis === 'x') writePos(p, 2 * cx - pos.x, pos.y)
+    else writePos(p, pos.x, 2 * cy - pos.y)
+    // 개별 뒤집기 토글 + 회전 부호 반전
+    if (axis === 'x') n.flipX = !n.flipX
+    else n.flipY = !n.flipY
+    if (n.rotation) n.rotation = -n.rotation
+    // 관절점(부모 로컬 프레임)도 같이 미러
+    if (axis === 'x' && p.spineJX !== undefined) p.spineJX = -p.spineJX
+    if (axis === 'y' && p.spineJY !== undefined) p.spineJY = -p.spineJY
+    n.updatedAt = Date.now()
+  }
+  // 그룹 박스 방향도 미러(부호 반전)
+  const gids = new Set(pls.map((p) => p.groupId).filter((g): g is string => !!g))
+  for (const gid of gids) {
+    if (doc.groups?.[gid]) doc.groups[gid] = { rot: ((-doc.groups[gid].rot % 360) + 360) % 360 }
+  }
+  changed()
 }
 
 /** 그룹의 방향 있는 경계 상자(OBB) — 회전해도 크기가 안 변하는 안정 박스. 월드 좌표. */
@@ -2185,6 +2314,10 @@ function placeDoc(incoming: SimpraWorldDoc, space: string | null, dx: number, dy
       x: isRoot ? p.x + dx : p.x,
       y: isRoot ? p.y + dy : p.y,
       locked: p.locked, // 위치잠금 유지
+      groupId: p.groupId ? remap(p.groupId) : undefined, // 그룹 유지(새 그룹 id로 remap)
+      spineParent: p.spineParent ? remap(p.spineParent) : undefined, // 관절 부모 유지
+      spineJX: p.spineJX,
+      spineJY: p.spineJY,
     }
     doc.placements.push(np)
     if (isRoot) rootPids.push(np.id)
@@ -2346,6 +2479,7 @@ export function resetToSample() {
   selection = new Set()
   camera = { x: 0, y: 0, zoom: defaultZoom() }
   noteEditorNodeId = null
+  noteUndoFloor = null
   selectedComponentId = null
   resetHistory() // 리셋은 되돌릴 수 없음 → 히스토리도 비움
   changed() // 저장(IndexedDB)도 함께
@@ -2358,6 +2492,7 @@ export function newWorld() {
   selection = new Set()
   camera = { x: 0, y: 0, zoom: defaultZoom() }
   noteEditorNodeId = null
+  noteUndoFloor = null
   selectedComponentId = null
   resetHistory()
   changed()
@@ -2374,6 +2509,7 @@ export function replaceWorld(incoming: SimpraWorldDoc) {
   selection = new Set()
   camera = { x: 0, y: 0, zoom: defaultZoom() }
   noteEditorNodeId = null
+  noteUndoFloor = null
   selectedComponentId = null
   resetHistory() // 새 문서를 연 것이므로 이전 히스토리는 버림
   changed()

@@ -59,6 +59,8 @@ export interface SNode {
   emphasize?: boolean // 이름 라벨 강조(대비 테두리) → 어떤 배경에서도 잘 보이게
   hideName?: boolean // 이름 라벨 숨김(폴더·노트) → 캔버스에 이름 안 그림
   rotation?: number // 사진 회전 각도(도, 임의값). 개체 아래 회전 핸들을 끌어 자유 회전(90°마다 스냅). 중심 기준 강체 회전.
+  flipX?: boolean // 좌우 뒤집기(미러). 렌더에서 회전 후 x축 스케일 -1.
+  flipY?: boolean // 위아래 뒤집기(미러). 렌더에서 회전 후 y축 스케일 -1.
   fontSize?: number // text 개체 글자 크기(월드 단위, 기본 20)
   bold?: boolean // text 개체 굵게
   align?: 'left' | 'center' | 'right' // text 개체 가로 정렬(기본 left)
@@ -108,6 +110,8 @@ export interface SpaceItem {
   emphasize?: boolean
   hideName?: boolean
   rotation?: number
+  flipX?: boolean
+  flipY?: boolean
   fontSize?: number
   bold?: boolean
   align?: 'left' | 'center' | 'right'

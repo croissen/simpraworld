@@ -36,6 +36,56 @@ export const Gap = styled.span`
   flex: none;
 `
 
+/* 펜 버튼(조이스틱) 방향 가이드 — 버튼 중심에 앵커(left/top은 JS로 세팅). opacity는 DOM으로 토글. */
+export const PenGuide = styled.div`
+  position: fixed;
+  z-index: 140;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  pointer-events: none; /* 표시만; 터치는 버튼이 받음 */
+`
+// 반지름 = FAB 슬롯 간격 72px. l=180°(홈에 완벽 겹침), r=0°(+에 완벽 겹침), ul=120°, ur=60°.
+// 칩 60px(반지름 30) → top-left = 중심좌표 − 30.
+const CHIP_POS = {
+  l: css`
+    left: -102px;
+    top: -30px;
+  `,
+  ul: css`
+    left: -66px;
+    top: -92px;
+  `,
+  ur: css`
+    left: 6px;
+    top: -92px;
+  `,
+  r: css`
+    left: 42px;
+    top: -30px;
+  `,
+}
+// 아이콘만(텍스트 X), 버튼과 동일한 60px 원형. data-on='1'이면 색 반전(초록). 크기는 항상 동일.
+export const GuideChip = styled.div<{ $pos: 'l' | 'r' | 'ul' | 'ur' }>`
+  position: absolute;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #dbe3f4;
+  background: #1b2030f2;
+  border: 1px solid #2b3346;
+  box-shadow: 0 6px 18px #0009;
+  transition: background 0.1s, color 0.1s;
+  &[data-on='1'] {
+    background: #3ddc7f;
+    border-color: #3ddc7f;
+    color: #04210f;
+  }
+  ${(p) => CHIP_POS[p.$pos]}
+`
+
 // 하단 조이스틱: 뒤에 레일(트랙)을 깔고, 손잡이(버튼)가 그 위를 좌우로 미끄러짐.
 const iconIn = keyframes`
   from { opacity: 0.15; transform: scale(0.6); }
@@ -66,6 +116,51 @@ export const StickRail = styled.div<{ $side: 'l' | 'r'; $on: boolean }>`
   z-index: 0;
   opacity: ${(p) => (p.$on ? 1 : 0)};
   transition: opacity 0.12s ease;
+`
+// 툴바 행에서 조이스틱 자리만 차지(실제 버튼은 body로 포털돼 위로 뜸)
+export const StickSpacer = styled.div`
+  width: 60px;
+  height: 60px;
+  flex: none;
+`
+// 조이스틱을 body로 포털 — 노트 오버레이(z120) 위(z130)에 항상 보이게. 4번째 슬롯 위치에 고정.
+export const StickPortal = styled.div`
+  position: fixed;
+  z-index: 130;
+  bottom: calc(30px + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  transform: translateX(calc(-50% + 72px)); /* 5개 중 4번째 슬롯(간격 72px) */
+`
+// 펜 조이스틱(2번째 슬롯) — 노트 열려도 위에 보이게 body 포털. 4번째 스틱과 대칭(-72px).
+export const PenPortal = styled.div`
+  position: fixed;
+  z-index: 130;
+  bottom: calc(30px + env(safe-area-inset-bottom, 0px));
+  left: 50%;
+  transform: translateX(calc(-50% - 72px)); /* 2번째 슬롯 */
+`
+// undo/redo 스틱 방향 가이드 — 손잡이 좌/우에 아이콘(색반전). StickPortal(60px) 기준 절대배치.
+export const URGuide = styled.div<{ $side: 'l' | 'r' }>`
+  position: absolute;
+  top: 0;
+  ${(p) => (p.$side === 'l' ? 'left: -72px;' : 'left: 72px;')}
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 25px;
+  color: #dbe3f4;
+  background: #1b2030f2;
+  border: 1px solid #2b3346;
+  box-shadow: 0 6px 18px #0009;
+  transition: background 0.1s, color 0.1s;
+  &[data-on='1'] {
+    background: #3ddc7f;
+    border-color: #3ddc7f;
+    color: #04210f;
+  }
 `
 // 손잡이(버튼) — 다른 FAB와 동일한 크기/색
 export const StickKnob = styled.button`
@@ -161,23 +256,26 @@ export const TrayItem = styled.span<{ $open: boolean; $i: number; $n: number; $a
     p.$open ? (p.$align === 'right' ? p.$n - 1 - p.$i : p.$i) * 0.08 : 0}s;
 `
 
-/* 모바일: 메뉴 클릭 시 뜨는 팝업(바텀시트) 리스트 */
+/* 메뉴 클릭 시 뜨는 팝업(바텀시트) 리스트 */
 export const MobilePopOverlay = styled.div`
   position: fixed;
   inset: 0;
+  height: 100dvh; /* 브라우저 주소창 제외한 '실제 보이는' 높이 → 팝업이 위/아래로 안 잘림 */
   z-index: 200;
   background: rgba(0, 0, 0, 0.45);
   display: flex;
   align-items: center; /* 화면 중앙 */
   justify-content: center;
+  /* 노치/주소창 여백 확보 + 가로화면에서 사방 여백 */
+  padding: max(10px, env(safe-area-inset-top)) 12px max(10px, env(safe-area-inset-bottom));
+  box-sizing: border-box;
 `
 
 export const MobileSheet = styled.div`
-  /* 요소 수와 무관하게 크기 통일 — 제일 긴 Setting(유니버스명 줄 + 7항목)이 스크롤 없이 보이는 높이로 고정. */
   width: 100%;
   max-width: 300px;
-  height: min(90vh, 524px);
-  margin: 0 16px;
+  /* 고정높이 대신 최대높이(dvh) — 짧은 메뉴는 짧게, 길면 내부 스크롤. 가로/짧은 화면에서도 안 잘림. */
+  max-height: min(90dvh, 524px);
   display: flex;
   flex-direction: column;
   background: #161b27f5;
@@ -282,7 +380,13 @@ export const savedPop = keyframes`
   100% { transform: scale(1); }
 `
 
-export const Button = styled.button<{ $on?: boolean; $danger?: boolean; $saved?: boolean }>`
+export const Button = styled.button<{
+  $on?: boolean
+  $danger?: boolean
+  $saved?: boolean
+  $icon?: boolean
+  $fab?: boolean
+}>`
   background: ${(p) =>
     p.$saved ? '#15391f' : p.$danger ? '#4a2230' : p.$on ? '#10311f' : '#1b2030'};
   border: 1px solid
@@ -294,11 +398,36 @@ export const Button = styled.button<{ $on?: boolean; $danger?: boolean; $saved?:
   font-size: 13px;
   white-space: nowrap;
   flex: none;
+  /* 내용(아이콘/글리프/텍스트) 중앙정렬 — 아이콘 세로정렬 어긋남 방지 */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
   transition: background 0.25s ease, border-color 0.25s ease, color 0.25s ease;
   ${(p) =>
     p.$saved &&
     css`
       animation: ${savedPop} 0.45s ease;
+    `}
+  /* 단일 아이콘 버튼(홈·펜·+·폴더·⋯)은 크기 통일한 정사각 */
+  ${(p) =>
+    p.$icon &&
+    css`
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      font-size: 17px;
+    `}
+  /* 모바일 FAB로 포털된 버튼(펜 조이스틱)은 다른 FAB와 동일한 60px 원형 */
+  ${(p) =>
+    p.$fab &&
+    css`
+      width: 60px;
+      height: 60px;
+      padding: 0;
+      border-radius: 50%;
+      font-size: 25px;
+      box-shadow: 0 6px 18px #0007;
     `}
 
   @media (max-width: 640px) {

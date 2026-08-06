@@ -9,6 +9,9 @@ export const Overlay = styled.div`
 export const Menu = styled.div`
   position: fixed;
   min-width: 184px;
+  max-height: calc(100dvh - 16px); /* 짧은 가로 화면에서도 안 잘리게 — 넘치면 내부 스크롤 */
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: #1c2230;
   border: 1px solid #333c4f;
   border-radius: 10px;

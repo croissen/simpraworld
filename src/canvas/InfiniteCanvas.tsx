@@ -36,6 +36,9 @@ import {
   getSelectedStrokesSnapshot,
   applyStrokeScale,
   getPanTool,
+  getHandMode,
+  leavePenForNav,
+  getGroupRot,
   getSpineWizard,
   groupOBB,
   groupScaleSnapshot,
@@ -104,7 +107,6 @@ function isLightColor(hex: string): boolean {
 const MIN_ZOOM = 0.05
 const MAX_ZOOM = 8
 const MIN_GRAB_PX = 14 // 작은 노드도 잡히게 최소 히트 반경
-const SEL_HIT_SHRINK = 0.6 // 사진·도형은 히트영역을 중앙으로 좁힘 → 큰 사진이 위 요소를 안 삼키게
 const ROT_GAP = 22 // 회전 핸들이 노드 하단에서 떨어진 거리(px)
 const ROT_SNAP_DEG = 6 // 회전 스냅: 90° 배수 근처 ±이 각도 안이면 딱 붙음
 const DWELL_MS = 300 // 폴더 위/노트 위에 이만큼 머물면 "넣기"·"맞바꾸기" 준비
@@ -1049,13 +1051,14 @@ export default function InfiniteCanvas() {
       const showImage = asset && zoom >= 0.2 // 사진은 20%까지 사진 그대로
       ctx.save()
 
-      // 사진·도형 자유 회전: 회전이 있으면 중심으로 옮겨 회전 → 이후 (cx,cy) 기준으로 그림
+      // 사진·도형 자유 회전 + 뒤집기(미러): 중심으로 옮겨 회전 후 scale(±1)로 좌우/위아래 반전.
       const rot = (((((n.rotation || 0) % 360) + 360) % 360) * Math.PI) / 180
       let cx = x
       let cy = y
-      if (rot) {
+      if (rot || n.flipX || n.flipY) {
         ctx.translate(x, y)
-        ctx.rotate(rot)
+        if (rot) ctx.rotate(rot)
+        if (n.flipX || n.flipY) ctx.scale(n.flipX ? -1 : 1, n.flipY ? -1 : 1)
         cx = 0
         cy = 0
       }
@@ -1275,11 +1278,10 @@ export default function InfiniteCanvas() {
         const it = list[i]
         if (excludePid && it.pid === excludePid) continue
         const p = w2s(it.x, it.y)
-        // 도형은 히트영역을 중앙으로 좁혀 "중심을 눌러야" 선택(큰 도형의 삼킴 방지).
-        // 사진은 가장자리 클릭도 선택되도록 전체 영역 사용(스플라인 연결점 등도 끝까지 잡힘).
-        const shrink = it.type === 'shape' ? SEL_HIT_SHRINK : 1
-        const hw = Math.max((it.w / 2) * c.zoom * shrink, MIN_GRAB_PX)
-        const hh = Math.max((it.h / 2) * c.zoom * shrink, MIN_GRAB_PX)
+        // 모든 개체를 전체 영역으로 히트(가장자리 클릭도 선택). 위→아래(최상단 우선) 순회라
+        // 큰 개체 위에 놓인 요소는 그 요소가 먼저 잡혀서 삼킴 문제 없음.
+        const hw = Math.max((it.w / 2) * c.zoom, MIN_GRAB_PX)
+        const hh = Math.max((it.h / 2) * c.zoom, MIN_GRAB_PX)
         let dx = sx - p.x
         let dy = sy - p.y
         const rot = (((((it.rotation || 0) % 360) + 360) % 360) * Math.PI) / 180
@@ -1338,6 +1340,10 @@ export default function InfiniteCanvas() {
     // 터치로 그릴 때: 손가락이 살짝 움직이기 전까진 획을 '대기'(월드 시작점만 보관).
     // 그 사이 두 번째 손가락이 오면 pinch(팬/줌)로 넘어가 그림이 안 그려짐. 마우스·스타일러스는 즉시 그림.
     let inkTouchPending: { wx: number; wy: number } | null = null
+    // 팜 리젝션: 현재 획을 시작한 포인터 id와 그게 펜인지. 펜으로 필기하는 동안 손바닥/손가락(touch)이
+    // 닿아도 무시 → 두 번째 포인터가 핀치줌으로 오인돼 획이 통째로 취소되던 현상 방지.
+    let inkPointerId: number | null = null
+    let inkIsPen = false
     // 우클릭 임시 지우개(펜 활성 중 우클릭 드래그 = 마지막에 고른 지우개로 지움)
     let rightErase = false
     // 올가미: 그리는 중인 폴리곤(월드 점열) / 선택 이동 시작점(월드) / 이번 드래그 이동 여부
@@ -1385,6 +1391,8 @@ export default function InfiniteCanvas() {
       pivSX: number
       pivSY: number
       lastAng: number
+      raw: number // 누적 회전각(스냅 전) — 시작 절대각에서 누적
+      applied: number // 마지막으로 실제 적용한(스냅된) 각도
     } | null = null
     // 그룹 크기조절: 고정점(반대 코너 월드) + 시작 거리 + 멤버 원본 스냅샷
     let groupResizeOp: {
@@ -1621,6 +1629,8 @@ export default function InfiniteCanvas() {
 
     function onDown(e: PointerEvent) {
       lastPointerType = e.pointerType || 'mouse'
+      // 팜 리젝션: 펜으로 필기 중엔 손바닥/손가락(touch) 접촉을 완전히 무시(캡처·핀치 안 함) → 획 안 끊김.
+      if (mode === 'ink' && inkIsPen && e.pointerType === 'touch') return
       if (e.button === 2) {
         // 펜 활성 중 우클릭 = 임시 지우개(마지막에 고른 지우개 종류로). 아니면 컨텍스트 메뉴.
         if (getInkMode()) {
@@ -1699,10 +1709,21 @@ export default function InfiniteCanvas() {
 
       // 잉크 모드: 이 드래그가 필기/지우기/올가미가 됨(다른 조작 무시).
       // 단, Space 누름 / 가운데(휠)버튼이면 그리지 말고 아래 팬 핸들러로 넘김(화면 이동).
+      // 펜은 '펜을 켠 상태(inkMode)'에서만 그린다 — 화면 터치로 자동 전환하지 않음.
       const ink = getInkMode()
-      if (ink && !spaceHeld && e.button !== 1) {
+      // 펜 팔레트(잉크모드) 열림 + 손가락 + 핸드모드 꺼짐 → 손가락은 필기 안 하고 내비/선택.
+      //  · 빈 곳 = 화면이동(펜 유지)  · 개체 위 = 아래 일반 선택/드래그로(탭 선택 시 펜 끔은 onUp에서)
+      const fingerNav = !!ink && e.pointerType === 'touch' && !getHandMode()
+      if (fingerNav && !spaceHeld && e.button !== 1 && !hitTest(p.x, p.y)) {
+        mode = 'pan'
+        dragItem = null
+        return
+      }
+      if (ink && !spaceHeld && e.button !== 1 && !fingerNav) {
         dragItem = null
         const w = s2w(p.x, p.y)
+        inkPointerId = e.pointerId // 이 획을 시작한 포인터(팜 리젝션 기준)
+        inkIsPen = e.pointerType === 'pen'
         if (isDrawKind(ink)) {
           mode = 'ink'
           if (e.pointerType === 'touch') {
@@ -1826,6 +1847,8 @@ export default function InfiniteCanvas() {
         jointOp = {
           ...gHandle,
           lastAng: (Math.atan2(p.y - gHandle.pivSY, p.x - gHandle.pivSX) * 180) / Math.PI,
+          raw: getGroupRot(gHandle.gid), // 시작 절대각(그룹 회전각)에서 누적 → 절대 90° 스냅
+          applied: getGroupRot(gHandle.gid),
         }
         dragItem = null
         return
@@ -1849,6 +1872,8 @@ export default function InfiniteCanvas() {
             pivSX: ps.x,
             pivSY: ps.y,
             lastAng: (Math.atan2(p.y - ps.y, p.x - ps.x) * 180) / Math.PI,
+            raw: 0,
+            applied: 0,
           }
         } else {
           mode = 'rotate'
@@ -1937,6 +1962,8 @@ export default function InfiniteCanvas() {
               pivSX: js.x,
               pivSY: js.y,
               lastAng: (Math.atan2(p.y - js.y, p.x - js.x) * 180) / Math.PI,
+              raw: getGroupRot(getPlacement(hit.pid)?.groupId || ''),
+              applied: getGroupRot(getPlacement(hit.pid)?.groupId || ''),
             }
             dragItem = null
             return
@@ -2143,10 +2170,15 @@ export default function InfiniteCanvas() {
         setRotationLive(rotateOp.nodeId, deg)
         markDirty()
       } else if (mode === 'jointrotate' && jointOp) {
-        // 축 중심 증분 회전: 커서 각도 변화만큼 강체(자기+하위 또는 그룹 전체)를 함께 회전
+        // 축 중심 증분 회전 + 90° 스냅(자석). raw에 누적, 출력은 90° 배수에 스냅해 그 차이만큼만 회전.
         const ang = (Math.atan2(p.y - jointOp.pivSY, p.x - jointOp.pivSX) * 180) / Math.PI
-        const dd = ang - jointOp.lastAng
+        jointOp.raw += ang - jointOp.lastAng
         jointOp.lastAng = ang
+        let target = jointOp.raw
+        const nearest = Math.round(target / 90) * 90
+        if (Math.abs(target - nearest) < ROT_SNAP_DEG) target = nearest
+        const dd = target - jointOp.applied // 지난 적용값과의 차이만큼만 실제 회전
+        jointOp.applied = target
         rotatePidsLive(jointOp.pids, jointOp.pivotX, jointOp.pivotY, dd)
         if (jointOp.gid) addGroupRotLive(jointOp.gid, dd) // 그룹 박스도 함께 돌게
         markDirty()
@@ -2266,6 +2298,8 @@ export default function InfiniteCanvas() {
     }
 
     function onUp(e: PointerEvent) {
+      // 팜 리젝션: 펜 필기 중 무시했던 손바닥/손가락(touch)이 떼질 때 → 획을 조기 커밋하지 않게 무시.
+      if (mode === 'ink' && inkIsPen && e.pointerType === 'touch' && e.pointerId !== inkPointerId) return
       pointers.delete(e.pointerId)
 
       if (mode === 'drag' && dragItem) {
@@ -2273,6 +2307,7 @@ export default function InfiniteCanvas() {
         if (longPressed) {
           longPressed = false // 롱프레스로 다중선택 완료 → 탭/이동 처리 건너뜀
         } else if (!moved) {
+          leavePenForNav() // 손가락으로 개체 탭(선택/열기) → 펜 끔(핸드모드 아니면). 팬/줌은 펜 유지.
           if (multiMode) {
             // 다중선택 모드: 톡 탭으로 토글 (추가/해제)
             select(dragItem.pid, true)
@@ -2411,6 +2446,8 @@ export default function InfiniteCanvas() {
       inkCursor = null
       lastEraseW = null
       inkTouchPending = null
+      inkPointerId = null
+      inkIsPen = false
       rightErase = false
       lassoPts = []
       lassoLast = null

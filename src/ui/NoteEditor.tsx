@@ -18,6 +18,7 @@ import {
   getNoteEditorPid,
   getNoteStrokes,
   getPanTool,
+  getHandMode,
   getPlacement,
   searchNotesInCurrentSpace,
   setInkMode,
@@ -139,7 +140,11 @@ function parseTags(text: string): string[] {
 
 // 메모 편집 팝업: 왼쪽=정사각 사진+교체+태그검색, 오른쪽=제목/본문/태그.
 export default function NoteEditor({ nodeId }: { nodeId: string }) {
-  const isMobile = useIsMobile()
+  // 모바일 노트 UI(핀치줌·팬)는 '세로 폰'에서만 — 터치 + 좁은폭.
+  // 가로 폰/태블릿/PC 좁은창은 아래 PC 노트를 화면에 맞춰(작게) 연다.
+  const isMobile = useIsMobile('(max-width: 640px) and (hover: none) and (pointer: coarse)')
+  // 터치기기 판정(가로폰·태블릿 포함) — 손가락 필기 여부(핸드모드) 게이트용.
+  const touch = useIsMobile('(hover: none) and (pointer: coarse)')
   const slotPid = getNoteEditorPid()
   const [viewedId, setViewedId] = useState(nodeId)
   const [query, setQuery] = useState('')
@@ -153,6 +158,8 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
   const [shareOpen, setShareOpen] = useState(false) // 공유 팝업
   const [capturing, setCapturing] = useState(false) // 캡처 중(버튼 숨김)
   const [shareMode, setShareMode] = useState<null | 'gallery' | 'clipboard'>(null)
+  const [shareFull, setShareFull] = useState(false) // 공유: 여백까지 전체(true) vs 기본 노트영역(false)
+  const capDims = useRef({ vpW: 0, vpH: 0, contentH: 0 }) // 캡처 기준 치수(캡처 직전 측정)
   // 모바일 포커스 모드: 'content'=내용만, 'tags'=해시태그만, 'none'=전체(제목/검색/보기)
   const [focusMode, setFocusMode] = useState<'none' | 'content' | 'tags'>('none')
   // 소프트 키보드 높이(px). Tab 버튼을 키보드 바로 위에 고정하는 데 사용(0=키보드 닫힘).
@@ -226,6 +233,7 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
   const [penMode, setPenMode] = useState(false)
   const [zoomPct, setZoomPct] = useState(100) // 현재 확대 퍼센트(표시용)
   const drawRef = useRef<HTMLCanvasElement>(null) // 필기 레이어(본문 위 오버레이, CSS 변형 없음=좌표 기준)
+  const capInkRef = useRef<HTMLCanvasElement>(null) // 공유 캡처용 필기 캔버스(CapBody 위에 덮음)
   const bodyRef = useRef<HTMLTextAreaElement>(null) // 본문 textarea(스크롤=세로 이동, CSS scale로 확대)
   const curStroke = useRef<number[] | null>(null) // 그리는 중인 획(콘텐츠 좌표 평탄배열)
   const curErase = useRef(false) // 그리는 중인 획이 'Area 지우개'(destination-out 자국)인가
@@ -243,6 +251,9 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
   const pinch = useRef<{ dist: number; startZoom: number; cx: number; cy: number } | null>(null)
   const pinchLatch = useRef(false) // 핀치 후 남은 손가락으로 실수 드로잉 방지
   const panDrag = useRef<{ x: number; y: number } | null>(null) // 화면이동(손) 도구: 한 손가락 드래그 이동
+  // 팜 리젝션: 펜으로 필기 중엔 손바닥/손가락(touch) 접촉을 무시(핀치 오인→획 취소 방지).
+  const notePenId = useRef<number | null>(null) // 현재 획을 시작한 포인터 id
+  const noteInkIsPen = useRef(false) // 그 포인터가 펜인가
   const PAN_MARGIN = 1 // 텍스트 영역 대비 상하좌우 여백 배수(보이는 영역=1 → 각 변에 1배씩)
   // 올가미(lasso): 획을 올가미로 감싸 선택 → 드래그로 이동 / 삭제.
   const [lassoSel, setLassoSel] = useState<string[]>([]) // 선택된 노트 획 id
@@ -356,7 +367,8 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
       ctx.fillStyle = color
     }
     ctx.lineWidth = width
-    ctx.lineCap = 'round'
+    // 형광펜은 납작한 끝(butt)=네모 밴드(캔버스와 동일). 펜·지우개는 둥근 끝.
+    ctx.lineCap = kind === 'highlighter' ? 'butt' : 'round'
     ctx.lineJoin = 'round'
     const n = pts.length / 2
     if (n === 1) {
@@ -584,7 +596,13 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
 
   const inkDown = (e: React.PointerEvent) => {
     if (!penMode || !drawRef.current) return
-    drawRef.current.setPointerCapture?.(e.pointerId)
+    // 팜 리젝션: 펜으로 필기 중엔 손바닥/손가락(touch) 접촉을 무시 → 핀치 오인으로 획이 안 끊기게.
+    if (noteInkIsPen.current && e.pointerType === 'touch') return
+    try {
+      drawRef.current.setPointerCapture?.(e.pointerId)
+    } catch {
+      /* 비활성 포인터 캡처 예외 무시 */
+    }
     pointers.current.set(e.pointerId, localXY(e))
     // 모바일 두 손가락 이상 = 확대/이동(그리기 아님). PC는 확대 없음(무시). 진행 중이던 획은 버림.
     if (isMobile && pointers.current.size >= 2) {
@@ -600,11 +618,15 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
       paintInk()
       return
     }
-    // 화면이동 도구(모바일): 한 손가락 드래그 = 노트 화면 이동(그리기 아님).
-    if (isMobile && getPanTool()) {
+    // 노트 필기(터치기기): 손가락은 기본 '화면이동'(핸드모드 켜야 손도 그림), 펜(S펜)은 항상 필기.
+    // 가로폰/태블릿(PC 노트 UI)에서도 동일 — 손가락 버튼 없이는 손으로 안 그려짐.
+    if (touch && (getPanTool() || (e.pointerType !== 'pen' && !getHandMode()))) {
       panDrag.current = localXY(e)
       return
     }
+    // 여기부터 실제 필기/지우기/올가미 → 이 포인터를 '현재 획 포인터'로 기록(팜 리젝션 기준).
+    notePenId.current = e.pointerId
+    noteInkIsPen.current = e.pointerType === 'pen'
     const lp = localXY(e)
     const { x, y } = toContent(lp.x, lp.y)
     eraseCursor.current = { x, y }
@@ -664,6 +686,8 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
   }
   const inkMove = (e: React.PointerEvent) => {
     if (!penMode || !drawRef.current) return
+    // 팜 리젝션: 펜 필기 중 무시 대상(다른 손가락)의 move는 획을 오염시키지 않게 무시.
+    if (noteInkIsPen.current && e.pointerType === 'touch' && e.pointerId !== notePenId.current) return
     if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, localXY(e))
     if (isMobile && pointers.current.size >= 2) {
       updatePinch() // 두 손가락 = 확대/이동
@@ -743,6 +767,12 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
     paintInk()
   }
   const inkUp = (e: React.PointerEvent) => {
+    // 팜 리젝션: 무시했던 손가락의 up은 획을 조기 확정하지 않게 무시. 펜(획 포인터)이 떼지면 기록 해제.
+    if (noteInkIsPen.current && e.pointerType === 'touch' && e.pointerId !== notePenId.current) return
+    if (e.pointerId === notePenId.current) {
+      notePenId.current = null
+      noteInkIsPen.current = false
+    }
     pointers.current.delete(e.pointerId)
     if (isMobile && pointers.current.size >= 2) {
       beginPinch() // 3→2 등: 남은 두 손가락으로 재기준
@@ -844,11 +874,12 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
     applyView()
   }
   // 본문 위에 얹는 필기 레이어 + 펜/키보드 토글(모바일·데스크톱 공통).
-  const inkOverlay = !capturing && (
+  // ⚠️ 캡처(공유) 중엔 캔버스(그림)는 남기고 버튼만 숨긴다(안 그러면 공유 이미지에 필기가 빠짐).
+  const inkOverlay = (
     <>
       <S.InkCanvas
         ref={drawRef}
-        style={{ pointerEvents: penMode ? 'auto' : 'none' }}
+        style={{ pointerEvents: penMode && !capturing ? 'auto' : 'none' }}
         onPointerDown={inkDown}
         onPointerMove={inkMove}
         onPointerUp={inkUp}
@@ -857,6 +888,8 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
         onWheel={inkWheel} // 데스크톱: 휠 이동 / Ctrl+휠 확대
         onContextMenu={(e) => e.preventDefault()} // 우클릭 지우개 → 브라우저 메뉴 안 뜨게
       />
+      {!capturing && (
+      <>
       <S.InkToggle>
         <button data-on={!penMode} onClick={() => setPenMode(false)} title="Keyboard">
           ⌨
@@ -893,6 +926,8 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
             </S.LassoDel>
           )
         })()}
+      </>
+      )}
     </>
   )
 
@@ -950,7 +985,11 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${(n.name || 'note').trim()}.png`
+    // 노트명_YYMMDDHHMMSS.png → 매번 다른 이름이라 "다시 다운로드" 안 뜸
+    const d = new Date()
+    const p = (v: number) => String(v).padStart(2, '0')
+    const ts = `${p(d.getFullYear() % 100)}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
+    a.download = `${(n.name || 'note').trim()}_${ts}.png`
     document.body.appendChild(a)
     a.click()
     a.remove()
@@ -981,16 +1020,21 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
   }
 
   // 갤러리/클립보드: capturing(버튼 숨김+해시태그 위로) 모드를 켜고, 그 렌더가 "커밋된 뒤"에 캡처
-  const shareGallery = () => {
+  // 캡처 직전 기준 치수 측정(캔버스=기본 뷰포트, 본문 전체높이). textarea 숨겨지기 전에.
+  const beginShare = (mode: 'gallery' | 'clipboard', full: boolean) => {
     setShareOpen(false)
-    setShareMode('gallery')
+    const cv = drawRef.current
+    const ta = bodyRef.current
+    const vpW = cv?.clientWidth || 300
+    const vpH = cv?.clientHeight || 300
+    capDims.current = { vpW, vpH, contentH: Math.max(ta?.scrollHeight || vpH, vpH) }
+    setShareFull(full)
+    setShareMode(mode)
     setCapturing(true)
   }
-  const shareClipboard = () => {
-    setShareOpen(false)
-    setShareMode('clipboard')
-    setCapturing(true)
-  }
+  const shareGallery = () => beginShare('gallery', false)
+  const shareGalleryFull = () => beginShare('gallery', true)
+  const shareClipboard = () => beginShare('clipboard', false)
 
   // capturing 모드 렌더가 적용된 뒤(effect = 커밋 이후) 캡처 → 버튼 숨김/해시태그 이동이 항상 반영됨
   useEffect(() => {
@@ -1004,6 +1048,23 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
       } catch {
         /* 무시 */
       }
+      // 필기 획을 캡처용 캔버스(CapBody 위)에 그려 넣음 → 공유 이미지에 그림 포함
+      const cap = capInkRef.current
+      const cctx = cap?.getContext('2d')
+      if (cap && cctx) {
+        const w = cap.clientWidth
+        const h = cap.clientHeight
+        const dpr = 2
+        // 전체(full)면 상/좌 여백만큼 원점을 밀어 음수좌표(위·왼쪽 여백) 그림도 들어오게
+        const ox = shareFull ? Math.round(PAN_MARGIN * capDims.current.vpW) : 0
+        const oy = shareFull ? Math.round(PAN_MARGIN * capDims.current.vpH) : 0
+        cap.width = Math.max(1, Math.round(w * dpr))
+        cap.height = Math.max(1, Math.round(h * dpr))
+        cctx.setTransform(dpr, 0, 0, dpr, dpr * ox, dpr * oy)
+        cctx.clearRect(-ox, -oy, w, h)
+        for (const s of getNoteStrokes(viewedId))
+          strokeOne(cctx, s.pts, s.color, s.width, s.erase ? 'erase' : s.kind === 'highlighter' ? 'highlighter' : 'pen')
+      }
       let blob: Blob | null = null
       try {
         if (paperRef.current)
@@ -1015,6 +1076,7 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
       const mode = shareMode
       setCapturing(false)
       setShareMode(null)
+      setShareFull(false)
       if (!blob) return
       if (mode === 'gallery') {
         downloadImage(blob)
@@ -1158,6 +1220,10 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
         <S.SharePop onClick={() => setShareOpen(false)}>
           <S.ShareSheet onClick={(e) => e.stopPropagation()}>
             <S.ShareItem onClick={shareGallery}>🖼 Save image</S.ShareItem>
+            {/* 'full'은 여백 낙서까지 포함 → 여백 낙서는 모바일 전용이라 PC에선 숨김 */}
+            {isMobile && (
+              <S.ShareItem onClick={shareGalleryFull}>🖼 Save full image (여백 포함)</S.ShareItem>
+            )}
             {/* 모바일은 이미지 클립보드 복사가 안 돼서 제외 */}
             {!isMobile && <S.ShareItem onClick={shareClipboard}>📋 Copy image</S.ShareItem>}
             <S.ShareItem onClick={shareText}>📝 Copy text</S.ShareItem>
@@ -1223,7 +1289,25 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
         ))}
       </S.CapTags>
     ) : null
-  const capBody = capturing ? <S.CapBody>{n.body || ''}</S.CapBody> : null
+  // 공유 캡처: 본문(CapBody) + 그 위 필기 캔버스를 영역 크기로 렌더.
+  // 기본(Save image)=노트 기본영역[0..bodyW]×[0..baseH]. 전체(Save full)=상하좌우 여백(PAN_MARGIN)까지.
+  const capReg = (() => {
+    const { vpW, vpH, contentH } = capDims.current
+    const baseH = Math.max(contentH, vpH)
+    const Mx = Math.round(PAN_MARGIN * vpW)
+    const My = Math.round(PAN_MARGIN * vpH)
+    return shareFull
+      ? { w: vpW + 2 * Mx, h: baseH + 2 * My, ox: Mx, oy: My, bw: vpW, bh: baseH }
+      : { w: vpW, h: baseH, ox: 0, oy: 0, bw: vpW, bh: baseH }
+  })()
+  const capBody = capturing ? (
+    <S.CapWrap style={{ width: capReg.w, height: capReg.h }}>
+      <S.CapBody style={{ position: 'absolute', left: capReg.ox, top: capReg.oy, width: capReg.bw, height: capReg.bh }}>
+        {n.body || ''}
+      </S.CapBody>
+      <S.InkCanvas ref={capInkRef} style={{ pointerEvents: 'none' }} />
+    </S.CapWrap>
+  ) : null
 
   // ── 모바일 레이아웃: [작은 사진 | 제목/검색 + X] → 본문이 나머지 채움 ──
   if (isMobile) {
@@ -1357,7 +1441,9 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
             <S.Body
               ref={bodyRef}
               value={n.body ?? ''}
-              placeholder={locked ? 'Double-tap to edit' : 'Write your note…'}
+              placeholder={
+                locked ? (getNoteStrokes(viewedId).length ? '' : 'Double-tap to edit') : 'Write your note…'
+              }
               readOnly={locked}
               onDoubleClick={enterEdit} // 더블탭 → 바로 수정+키패드
               onKeyDown={onBodyKeyDown}

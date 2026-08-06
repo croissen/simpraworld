@@ -7,6 +7,7 @@ import {
   copySelection,
   duplicateSelection,
   duplicateSelectionBound,
+  flipSelection,
   getContextMenu,
   getNode,
   groupSelection,
@@ -87,10 +88,13 @@ export default function ContextMenu({
     closeContextMenu()
   }
 
-  // 보일 항목 수로 대략적 높이 추정 → 화면 밖으로 안 나가게 클램프 (Paste here는 항상 표시)
+  // 보일 항목 수로 대략적 높이 추정 → 화면 안에 안정적으로 (짧은 가로화면에선 최대높이로 캡되고 스크롤).
   const rows = (node ? 8 : 0) + 2
-  const left = Math.min(cm.x, window.innerWidth - 200)
-  const top = Math.min(cm.y, window.innerHeight - (rows * 34 + 24))
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const menuH = Math.min(rows * 34 + 24, vh - 16)
+  const left = Math.max(8, Math.min(cm.x, vw - 200))
+  const top = Math.max(8, Math.min(cm.y, vh - menuH - 8))
 
   return createPortal(
     <S.Overlay onClick={closeContextMenu} onContextMenu={(e) => (e.preventDefault(), closeContextMenu())}>
@@ -152,6 +156,18 @@ export default function ContextMenu({
                 ⋔ Spine (connect joint)
               </S.Item>
             )}
+          </>
+        )}
+
+        {node && (node.type === 'shape' || node.type === 'photo') && (
+          <>
+            <S.Sep />
+            <S.Item onClick={run(() => flipSelection('x'))} title="Mirror left–right">
+              ↔ Flip horizontal
+            </S.Item>
+            <S.Item onClick={run(() => flipSelection('y'))} title="Mirror up–down">
+              ↕ Flip vertical
+            </S.Item>
           </>
         )}
 

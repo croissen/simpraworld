@@ -61,7 +61,11 @@ export default function TagRow({
   const onDown = (e: React.PointerEvent, t: string) => {
     dragging.current = t
     setDragTag(t)
-    ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
+    try {
+      ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
+    } catch {
+      /* 비활성 포인터 캡처 예외 무시 */
+    }
   }
   const onMove = (e: React.PointerEvent) => {
     const drag = dragging.current

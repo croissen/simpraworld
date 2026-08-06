@@ -7,12 +7,16 @@ import {
   getInkMode,
   getLastEraser,
   getPanTool,
+  getHandMode,
   getPenWidth,
   getRecentColors,
+  getPalettePos,
   setInkColor,
   setInkMode,
   setPanTool,
+  setHandMode,
   setPenWidth,
+  setPalettePos,
 } from '../store'
 import type { InkMode } from '../store'
 import ColorPopup from './ColorPopup'
@@ -32,7 +36,7 @@ const ERASERS: { m: InkMode; label: string }[] = [
 ]
 
 // 도구 아이콘 — 이모지(PC에서 흑백으로 안 보임) 대신 흰색 SVG(currentColor)
-function ToolIcon({ m, size = 20 }: { m: InkMode; size?: number }) {
+export function ToolIcon({ m, size = 20 }: { m: InkMode; size?: number }) {
   const p: Record<string, string> = {
     pen: 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34a.9959.9959 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z',
     highlighter:
@@ -64,11 +68,11 @@ const IconMinimize = () => (
     <rect x="5" y="16" width="14" height="2.4" rx="1.2" fill="currentColor" />
   </svg>
 )
-// 화면이동(손/네방향 화살표) 아이콘
-const IconMove = () => (
+// 핸드모드(손가락으로도 그리기) 아이콘 — 손 모양
+const IconHand = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden>
     <path
-      d="M12 2l3 3h-2v6h6V9l3 3-3 3v-2h-6v6h2l-3 3-3-3h2v-6H5v2l-3-3 3-3v2h6V5H9l3-3z"
+      d="M13 1.5a1.5 1.5 0 0 1 1.5 1.5v6h1V3.5a1.5 1.5 0 0 1 3 0V11h1V5.5a1.5 1.5 0 0 1 3 0v8.5c0 4.14-3.36 7.5-7.5 7.5h-1.2a7.5 7.5 0 0 1-6.1-3.14l-3.3-4.62a1.5 1.5 0 0 1 2.3-1.9L9.5 12V3A1.5 1.5 0 0 1 11 1.5h.5A1.5 1.5 0 0 1 13 3v5.5h-1V3a1.5 1.5 0 0 0-1.5-1.5z"
       fill="currentColor"
     />
   </svg>
@@ -79,13 +83,17 @@ export default function PenPalette() {
   const color = getInkColor()
   const width = getPenWidth()
   const recents = getRecentColors()
-  const [pos, setPos] = useState(() => ({
-    x: typeof window !== 'undefined' ? Math.max(8, window.innerWidth - 268) : 8,
-    y: 72,
-  }))
-  const isMobile = useIsMobile()
+  const [pos, setPos] = useState(
+    () =>
+      getPalettePos() ?? {
+        x: typeof window !== 'undefined' ? Math.max(8, window.innerWidth - 268) : 8,
+        y: 72,
+      },
+  )
+  const touch = useIsMobile('(hover: none) and (pointer: coarse)') // 터치기기(가로폰·태블릿 포함) 기준
   const panOn = getPanTool()
-  const [min, setMin] = useState(() => isMobile) // 모바일만 최소화로 시작, PC는 펼친 채로
+  const handOn = getHandMode()
+  const [min, setMin] = useState(() => touch) // 터치기기(가로폰·태블릿 포함)는 최소화로 시작, PC(마우스)만 펼친 채로
   const [showPicker, setShowPicker] = useState(false) // 상세 색 선택 팝업
   // 최소화 바에서 아래로 펼치는 하위 패널: 색상 / 펜(펜·형광펜+굵기) / 지우개(획·영역+굵기)
   const [miniPanel, setMiniPanel] = useState<null | 'colors' | 'pen' | 'eraser'>(null)
@@ -115,18 +123,21 @@ export default function PenPalette() {
   function onHeaderDown(e: React.PointerEvent) {
     e.preventDefault()
     const start = { mx: e.clientX, my: e.clientY, px: pos.x, py: pos.y }
+    let last = pos
     const move = (ev: PointerEvent) => {
       const el = cardRef.current
       const w = el?.offsetWidth ?? 256
       const h = el?.offsetHeight ?? 120
-      setPos({
+      last = {
         x: Math.max(8, Math.min(window.innerWidth - w - 8, start.px + (ev.clientX - start.mx))),
         y: Math.max(8, Math.min(window.innerHeight - h - 8, start.py + (ev.clientY - start.my))),
-      })
+      }
+      setPos(last)
     }
     const up = () => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
+      setPalettePos(last) // 옮긴 위치 기억(닫았다 열어도 그 자리)
     }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
@@ -193,17 +204,17 @@ export default function PenPalette() {
         <Card ref={cardRef} style={{ left: pos.x, top: pos.y }} onPointerDown={(e) => e.stopPropagation()}>
           <MiniBar onPointerDown={onHeaderDown}>
             <Grip>⠿</Grip>
-            {isMobile && (
+            {touch && (
               <MiniTool
-                $on={panOn}
-                title="Move (pan the view)"
+                $on={handOn}
+                title={handOn ? 'Hand mode ON — finger also draws' : 'Hand mode — let finger draw too (off: finger pans)'}
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={() => {
-                  setPanTool(!panOn)
+                  setHandMode(!handOn)
                   setMiniPanel(null)
                 }}
               >
-                <IconMove />
+                <IconHand />
               </MiniTool>
             )}
             <MiniTool
@@ -322,7 +333,7 @@ export default function PenPalette() {
   return createPortal(
     <>
       {/* 모바일: 펼친 상태면 팔레트 밖을 덮는 백드롭 → 그 위 탭은 드로잉 안 되고(차단) 팔레트를 최소화. */}
-      {isMobile && <Backdrop onPointerDown={minimize} />}
+      {touch && <Backdrop onPointerDown={minimize} />}
       <Card ref={cardRef} style={{ left: pos.x, top: pos.y }} onPointerDown={(e) => e.stopPropagation()}>
       <Header onPointerDown={onHeaderDown}>
         <Grip>⠿</Grip>
@@ -477,7 +488,7 @@ const Card = styled.div`
   box-shadow: 0 14px 44px rgba(0, 0, 0, 0.5);
   padding: 8px 10px 10px;
   user-select: none;
-  touch-action: none;
+  touch-action: pan-y; /* 세로 스크롤 허용(펼친 팔레트가 화면보다 크면 스크롤). 드래그는 헤더에서만. */
 `
 
 const Header = styled.div`
@@ -486,6 +497,7 @@ const Header = styled.div`
   gap: 6px;
   padding: 2px 0 8px;
   cursor: grab;
+  touch-action: none; /* 헤더 드래그로 이동(스크롤과 충돌 방지) */
   &:active {
     cursor: grabbing;
   }
@@ -503,6 +515,7 @@ const MiniBar = styled.div`
   gap: 8px;
   padding: 4px 4px;
   cursor: grab;
+  touch-action: none; /* 최소화 바 드래그로 이동 */
   &:active {
     cursor: grabbing;
   }

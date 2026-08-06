@@ -5,7 +5,6 @@ import {
   canRedo,
   canUndo,
   getInkMode,
-  setInkMode,
   setDrawTool,
   getCamera,
   getComponentsOpen,
@@ -14,6 +13,7 @@ import {
   goTo,
   hasUnsavedWork,
   importWorld,
+  leavePenForNav,
   redo,
   resetToSample,
   selectionCount,
@@ -43,6 +43,7 @@ import PromptModal from './PromptModal'
 import OverflowMenu from './OverflowMenu'
 import ShapePicker from './ShapePicker'
 import PenPalette from './PenPalette'
+import PenStick from './PenStick'
 import UndoRedoStick from './UndoRedoStick'
 import { useIsMobile } from '../useIsMobile'
 import * as S from './Toolbar.styles'
@@ -174,17 +175,18 @@ export default function Toolbar() {
         <S.Gap />
       </S.UndoGroup>
       {/* 홈: 최상단 유니버스(루트)로 이동 */}
-      <S.Button onClick={() => goTo(null)} title="Home — go to the top universe">
+      <S.Button
+        $icon
+        onClick={() => {
+          leavePenForNav() // 핸드모드 아니면 펜 끄기
+          goTo(null)
+        }}
+        title="Home — go to the top universe"
+      >
         <IconHome />
       </S.Button>
-      {/* ✎ 펜: 누르면 바로 필기 모드 진입(플로팅 팔레트). 다시 누르면 완전 종료. */}
-      <S.Button
-        $on={!!getInkMode()}
-        onClick={() => setInkMode(getInkMode() ? null : 'pen')}
-        title="Draw — write freely with finger or mouse (press again to turn off)"
-      >
-        ✎
-      </S.Button>
+      {/* ✎ 펜: 탭=켜기/끄기. 펜 켜진 상태에서 좌 슬라이드=형광펜, 우=지우개(조이스틱). */}
+      <PenStick />
       {getInkMode() && <PenPalette />}
       {/* + 메뉴: 추가 도구 (기본 열림) */}
       <OverflowMenu

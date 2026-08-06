@@ -3,19 +3,22 @@ import styled, { css } from 'styled-components'
 export const Overlay = styled.div`
   position: fixed;
   inset: 0;
+  height: 100dvh; /* 브라우저 주소창 제외한 실제 높이 */
   z-index: 120;
   background: #00000088;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 4%;
+  padding: 12px;
+  box-sizing: border-box;
 `
 
 // 흰 "종이" — 왼쪽(사진/검색) + 오른쪽(메모장) 2단
 export const Paper = styled.div<{ $cap?: boolean }>`
   width: 100%;
   max-width: 780px;
-  height: 72vh; /* 고정 높이 — 노트가 많아도 안 늘어남(왼쪽 리스트가 안에서 스크롤) */
+  /* 고정높이 대신 뷰포트에 맞춰(가로/짧은 화면에서도 안 잘림). 길면 각 칸이 안에서 스크롤. */
+  height: min(640px, calc(100dvh - 24px));
   background: #f3f1ea;
   border: 1px solid #d9d4c7;
   border-radius: 14px;
@@ -33,6 +36,8 @@ export const Paper = styled.div<{ $cap?: boolean }>`
 export const Left = styled.div`
   flex: none;
   width: 248px;
+  min-height: 0;
+  overflow-y: auto; /* 짧은 화면에서 썸네일+검색이 넘치면 이 칸이 스크롤(잘림 방지) */
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -836,6 +841,13 @@ export const CapTag = styled.span`
   overflow-wrap: anywhere; /* 아주 긴 태그만 칸 안에서 줄바꿈(짧은 건 그대로) */
 `
 /* 캡처 시 본문: textarea 대신 div로 전체 내용 표시(길면 아래로 계속 이어짐) */
+// 공유 캡처: 본문 텍스트(CapBody) + 그 위 필기 캔버스를 겹치는 컨테이너(크기는 인라인 지정)
+export const CapWrap = styled.div`
+  position: relative;
+  flex: none;
+  align-self: flex-start;
+`
+
 export const CapBody = styled.div`
   flex: 1;
   padding: 16px 18px;
@@ -854,6 +866,8 @@ const hideForCap = css`
   height: auto;
   max-height: none;
   overflow: visible;
+  width: max-content; /* 여백 포함 전체 캡처 시 카드가 넓어져도 안 잘리게 */
+  max-width: none;
   ${Close}, ${Revert}, ${SwapBtn}, ${ShareBtn}, ${ActionRow}, ${SearchRow}, ${Results},
   ${MResults}, ${ClearBtn}, ${TagInput}, ${TagBar}, ${Body} {
     display: none !important;

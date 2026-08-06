@@ -6,10 +6,14 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:app": "node scripts/build-app.mjs",
+    "app:sync": "node scripts/build-app.mjs && cap sync android",
     "preview": "vite preview",
     "deploy": "node scripts/deploy.mjs"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
     "framer-motion": "^11.18.2",
     "html-to-image": "^1.11.11",
     "idb-keyval": "^6.2.1",
@@ -20,6 +24,8 @@
     "styled-components": "^6.4.2"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^8.5.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",

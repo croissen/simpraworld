@@ -3,14 +3,14 @@ import styled from 'styled-components'
 // 우상단에 자리잡는 컨테이너 (접힘=칩 / 펼침=카드)
 export const Wrap = styled.div`
   position: absolute;
-  top: 12%;
-  right: 2%;
+  top: 56px; /* 툴바 아래 고정(가로화면에서 % 때문에 위로 붙어 겹치던 것 방지) */
+  right: 8px;
   z-index: 10;
   display: flex;
   justify-content: flex-end;
 `
 
-// 접힘: 좌표만 보여주는 작은 칩
+// 접힘: 좌표만 보여주는 작은 칩 (드래그로 이동, 탭하면 펼침)
 export const Chip = styled.button`
   background: #161b27ee;
   border: 1px solid #2b3346;
@@ -20,16 +20,20 @@ export const Chip = styled.button`
   font-size: 12px;
   font-family: ui-monospace, monospace;
   letter-spacing: 0.03em;
-  cursor: pointer;
+  cursor: grab;
   backdrop-filter: blur(6px);
+  touch-action: none; /* 드래그로 이동 */
   &:hover {
     border-color: #41506e;
   }
 `
 
-// 펼침: 좌표 입력 카드
+// 펼침: 좌표 입력 카드 (긴 화면에서 넘치면 세로 스크롤)
 export const Card = styled.div`
   width: 210px;
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: #161b27f2;
   border: 1px solid #2b3346;
   border-radius: 14px;
@@ -48,11 +52,12 @@ export const Head = styled.button`
   color: #aeb8cc;
   font-family: ui-monospace, monospace;
   font-size: 12px;
-  cursor: pointer;
+  cursor: grab;
   padding: 0 2px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  touch-action: none; /* 헤더 드래그로 카드 이동(스크롤과 충돌 방지) */
 `
 
 export const Row = styled.div`

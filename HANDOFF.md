@@ -1,3 +1,5 @@
+> 🕒 마지막 갱신: **2026-08-06 09:50**
+
 # SimpraWorld — 작업 핸드오프 (다음 세션은 이거 먼저 정독)
 
 > 이 파일은 **새 채팅방이 이거 하나 읽고 바로 정신차리고 작업**하게 하려고 만든 문서다.
@@ -72,9 +74,13 @@ simpraworld/
   vite.config.ts              ← dedupe 설정 있음(건드리지 마)
   index.html                  ← title: SimpraWorld, iOS viewport(user-scalable=no)
   src/
-    main.tsx                  ← 엔트리 (styles.css import 없음. GlobalStyle은 App에서 렌더)
+    main.tsx                  ← 엔트리 → Root 렌더
+    Root.tsx                  ← ★라우터: 마케팅 사이트(site/) + /my-universe(=App.tsx lazy)
+    site/                     ← 마케팅 사이트(Landing/About/Dayflip/Hexapoppop). 유니버스와 import 0(분리)
     global.styles.ts          ← createGlobalStyle (html/body/#root 리셋)
-    App.tsx / App.styles.ts   ← 셸: 상단바(브랜드/Breadcrumb/Toolbar) + Canvas + Inspector + Hint
+    App.tsx / App.styles.ts   ← ★유니버스 셸(/my-universe): 헤더/Toolbar + Canvas + Inspector/NoteEditor
+    textMeasure.ts            ← 텍스트 크기/줄바꿈(캐싱). 캔버스·노트 텍스트 공용
+    useIsMobile.ts            ← 모바일 판정 훅
     types.ts                  ← 데이터 모델(SNode/SEdge/Template/Asset/SimpraWorldDoc) + uid()
     store.ts                  ← ★상태 + 모든 mutation + IndexedDB 영속화. 앱의 두뇌.
     sampleWorld.ts            ← 온보딩 예시 세계(우리집/친구들/냉장고…)
@@ -84,9 +90,15 @@ simpraworld/
       InfiniteCanvas.tsx      ← ★캔버스 렌더 루프 + pan/zoom/pinch + 히트테스트 + 드래그
       InfiniteCanvas.styles.ts← <S.Canvas> (touch-action:none 등)
     ui/
-      Toolbar.tsx/.styles.ts      ← +폴더 +메모, 내보내기/추가/열기
-      Inspector.tsx/.styles.ts    ← 선택 노드 편집(이름/모양/색/사진/뷰/컴포넌트/삭제)
-      Breadcrumb.tsx/.styles.ts   ← 🌍 내 세계 › 폴더 › ... 경로
+      Toolbar.tsx/.styles.ts      ← 툴바(모바일=하단 FAB 가로, 데스크톱=상단). +추가/📁패널/⋯Setting
+      OverflowMenu.tsx            ← 펼침메뉴(데스크톱 트레이 / 모바일 중앙모달). corner=우상단 고정
+      MobileHeader.tsx/.styles.ts ← 모바일 상단바(Simpra↔상위폴더 / 폴더명▾ 드롭다운)
+      UndoRedoStick.tsx           ← undo/redo 조이스틱(하단 4번째, body 포털 z130)
+      NoteEditor.tsx/.styles.ts   ← ★노트 편집+안 필기(펜/지우개/올가미/핀치줌). 큼(구간별 Grep)
+      PenPalette.tsx              ← 펜 팔레트(캔버스·노트 공용). 최소화 바에 도구 하위옵션
+      Inspector.tsx/.styles.ts    ← 선택 노드 편집(이름/모양/색/사진/컴포넌트/삭제)
+      ObjectActions.tsx           ← 모바일 개체 액션바(🗑삭제·⚙메뉴·✎편집·→열기)
+      Breadcrumb.tsx / ContextMenu.tsx / ComponentsPanel.tsx / LibraryPanel.tsx / ...
 ```
 
 ---
@@ -119,6 +131,37 @@ simpraworld/
 **다대다 참조 구조(중요):** node=데이터 원본 1개, **placement=소속+좌표 관계테이블**(한 노드가 여러 placement → 여러 공간 동시 존재). 캔버스엔 `SpaceItem`(placement+node 조인) 넘김. 선택/드래그=placement id, 진입/엣지=node id. 네비=`spacePath` 스택. 인스펙터 "🔗 N곳에 있음"+`여기서만 빼기`(removePlacement)/`완전 삭제`(deleteNode), 순환방지 `isCyclic`/`canNestInto`.
 
 **정리=드래그, 결속=Unique copy (⚠️ 옛 Alt드래그 참조는 제거됨 — 다시 만들지 마):** 노드를 폴더 위로 끌어 **0.5초(DWELL_MS) 머물면** 초록 강조('Move here') → 드래그=그 폴더로 **이동**(`movePlacementToSpace`, 소속만 변경, 참조 아님). **여러 공간에 같은 걸 두려면**: 독립이면 **컴포넌트**(스냅샷, 따로 편집), 결속이면 **우클릭 Unique copy → Paste**(같은 노드 공유 placement → 값/사진/삭제 전파). 즉 다대다 placement 공유 메커니즘은 그대로지만 **노출은 Unique copy로만**. ⚠️ 옛 검색형 ReferencePicker/Alt드래그 참조 UX 부활 금지. 아직 없음: 드래그로 폴더 **밖으로** 빼기, 모바일(Space/Alt 없음 → 롱프레스 등). 향후.
+
+---
+
+## 7.5 최근 대규모 작업 (2026-07~08, 이거 모르면 중복 구현한다)
+
+**구조 변경 — 마케팅 사이트 + 유니버스 한 repo:** 이제 이 repo는 라우터(`src/Root.tsx`, react-router)로 **마케팅 사이트(`src/site`: Landing/About/Dayflip/Hexapoppop)** + **캔버스 앱(`/my-universe` 라우트 = `src/App.tsx` lazy 로드)**를 함께 서빙한다. `App.tsx`+`src/canvas`+`src/ui`(유니버스)와 `src/site`는 **서로 import 0** (깨끗이 분리 — 앱으로 뗄 때 이 경계 그대로 씀). 캔버스 앱은 `/my-universe`에서만 로드. dev 포트는 `vite.config.ts` `server.port` 참조(회사망 회피용 고정), `.claude/launch.json`은 프리뷰용 5199.
+
+**노트 안 필기(NoteEditor, 삼성노트式):** 노트 본문 위에 드로잉 레이어 겹침. **펜/형광펜/지우개(Stroke=획통째·Area=픽셀 destination-out)/올가미(선택·이동·리사이즈·삭제)** — 캔버스 펜 로직과 **동일 방식 재구현**(2차 베지어 스무딩 + coalesced 이벤트). 획은 `SNode.noteStrokes`(콘텐츠 로컬좌표)에 저장 → `.spu`·undo에 자동 포함. 기존 캔버스 펜 팔레트(`ui/PenPalette`) 재사용(z-index 130으로 노트 위에 뜸). 우클릭=임시 Stroke지우개. **PC 우클릭 지우개**도 지원. store: `addNoteStroke/eraseNoteStrokesNear(선분)/moveNoteStrokes/applyNoteStrokeGeom/deleteNoteStrokes`.
+
+**노트 확대/이동(모바일 전용):** 펜 모드에서 **두 손가락=핀치줌+팬**(그리기 아님), **퍼센트 표시**(탭=100% 리셋). 이동 범위는 **텍스트영역 + 상하좌우 여백 1배씩**으로 클램프(`PAN_MARGIN`, 무한 아님). 점선으로 텍스트 영역(내용 전체 높이) 경계 표시. **PC는 100% 고정**(핀치·여백 없음, 휠=스크롤), 그리고 **PC 렌더 시 텍스트영역 밖 획(모바일 여백 낙서)은 클리핑으로 숨김** — 데이터는 보존. `ResizeObserver`로 창 크기 변할 때 캔버스 재렌더(찹쌀떡 늘어남 방지).
+
+**성능:** `textMeasure.ts` **캐싱**(내용·글꼴·폭 키) — 팬/줌 시 글자당 measureText 폭발 방지(잔렉 해결). 사진 **히트영역 전체**(가장자리 클릭도 선택; 도형만 중앙 60% 유지, `SEL_HIT_SHRINK`). **부분 Export(폴더/공간)에 stroke 누락 버그 수정**(그 공간 획도 함께 나감).
+
+**모바일 UI 재편(하단 툴바 + 상단 헤더):**
+- **하단 FAB 가로 중앙**: `🏠홈 · ✎펜 · +추가 · [undo/redo 조이스틱] · 📁폴더`. 홈=`goTo(null)`(최상단 유니버스). 홈·폴더 아이콘은 ✎처럼 얇은 라인 SVG(`Toolbar.tsx` IconHome/IconFolder). `+·폴더·⋯` 팝업은 **화면 중앙 모달**(고정 크기 통일, 좌측 제목 Add/Directory/Setting + 우상단 X). Setting(⋯) 팝업엔 유니버스명+✎(이름수정).
+- **⋯ Setting = 우상단 고정**(body로 포털 — `S.Toolbar`의 transform 때문에 fixed가 안 먹어서 포털). `OverflowMenu` `corner` prop.
+- **undo/redo 조이스틱**(`ui/UndoRedoStick`): 4번째 FAB, 좌로 튕기면 undo·우로 redo(**한 번 튕김=1회**, 방향 아이콘 ↶/↷/⇆). body로 포털(z130)해서 **노트 열려도 위에 보임**.
+- **상단 헤더(`ui/MobileHeader`)**: 최상단=Simpra 로고, 폴더 안=그 자리에 **상위폴더(↰) 버튼**으로 스위치. undo/redo는 헤더에서 제거(→조이스틱). ⋯와 상위폴더 버튼 크기 42px 통일.
+
+**노트 undo 안전장치(중요):** 노트에 **들어온 순간의 undo 깊이를 `noteUndoFloor`로 바닥 고정** → 노트 안에서 undo는 그 아래로 못 감. **노트 생성/이전 작업이 롤백돼 노트가 사라지며 팅기는 것 방지**. 들어온 뒤 필기한 획만 undo. `openNote`에서 설정, `closeNote`/New/Open/Reset에서 해제.
+
+---
+
+## 7.6 다음 대작업 — 앱 패키징 (합의됨, 다음 채팅방에서 시작)
+
+**`/my-universe` 캔버스 앱만 떼어 모바일 앱으로.** 동기 = 브라우저 캐시 삭제로 데이터 날아가는 것 방지.
+1. **오프라인 완전 동작**(한글처럼) → 웹 빌드를 앱에 **번들**.
+2. **git push 하나로 웹·앱 자동반영(이중작업 0)** → **OTA(오픈소스 Capgo)** 로 새 빌드 무선배포. 로직/디자인 변경은 앱스토어 재심사 없이 반영, 껍데기 변경만 재업로드.
+3. **데이터 영속** → 앱 WebView IndexedDB(앱 전용 저장소, 브라우저 삭제 무관) + `.spu` 네이티브 파일(Capacitor Filesystem/Share) 이중 백업.
+4. **순서**: 안드로이드(구글플레이) 먼저(이 Windows PC 빌드 가능) → 아이폰 차후(Mac 필요) → PC 데스크톱 차후(Tauri/Electron, 같은 코드).
+- **래핑 = Capacitor**(모바일). 유니버스와 `src/site`의 import 경계가 깨끗하니 그대로 분리해서 씀.
 
 ---
 
