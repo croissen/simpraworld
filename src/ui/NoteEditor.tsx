@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import {
   DEFAULT_BADGE_SIZE,
@@ -13,6 +13,7 @@ import {
   getEraserRadius,
   getInkColor,
   getInkMode,
+  getInkSmooth,
   getInkWidth,
   getNode,
   getNoteEditorPid,
@@ -20,13 +21,16 @@ import {
   getPanTool,
   getHandMode,
   getPlacement,
+  getSnapshot,
   searchNotesInCurrentSpace,
   setInkMode,
+  subscribe,
   swapInNote,
   updateNode,
 } from '../store'
 import { uid } from '../types'
 import type { SNode } from '../types'
+import { makeStabilizer } from '../oneEuro'
 import { toBlob } from 'html-to-image'
 import { fileToImage, pickImageFile } from '../image'
 import { useIsMobile } from '../useIsMobile'
@@ -236,6 +240,7 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
   const capInkRef = useRef<HTMLCanvasElement>(null) // 공유 캡처용 필기 캔버스(CapBody 위에 덮음)
   const bodyRef = useRef<HTMLTextAreaElement>(null) // 본문 textarea(스크롤=세로 이동, CSS scale로 확대)
   const curStroke = useRef<number[] | null>(null) // 그리는 중인 획(콘텐츠 좌표 평탄배열)
+  const smoother = useRef(makeStabilizer(0)) // 손떨림 보정(획 시작마다 현재 강도로 새로 생성)
   const curErase = useRef(false) // 그리는 중인 획이 'Area 지우개'(destination-out 자국)인가
   const erasing = useRef(false) // 'Stroke 지우개'(획 통째 삭제) 진행 중인가
   const lastErase = useRef<{ x: number; y: number } | null>(null) // Stroke 지우개 이동 선분 시작점
@@ -559,6 +564,15 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
     setZoomPct(Math.round(zoomRef.current * 100))
     applyView()
   }, [penMode])
+  // 하단 펜 버튼(전역 잉크모드) ↔ 노트 내 키보드/펜 토글 양방향 동기화.
+  // 잉크모드가 바깥(하단 펜 조이스틱)에서 바뀌면 penMode도 따라오게 한다.
+  // (penMode→잉크모드는 위 [penMode] 이펙트가 담당 → 아래 이펙트는 [penMode] 다음에 선언해
+  //  마운트 시 "노트는 키보드로 열기"가 먼저 적용되게 함.)
+  const inkVer = useSyncExternalStore(subscribe, getSnapshot)
+  useEffect(() => {
+    const want = !!getInkMode()
+    setPenMode((p) => (p === want ? p : want))
+  }, [inkVer])
   // 편집기 닫힐 때 잉크모드 정리(캔버스가 그리기 상태로 남지 않게).
   useEffect(
     () => () => {
@@ -594,8 +608,38 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
     applyView()
   }
 
+  // 그리던 획을 확정한다(되돌리기 1스텝). up 이벤트가 유실돼도 이 획이 사라지지 않게 재사용.
+  const commitPendingStroke = () => {
+    const pts = curStroke.current
+    if (!pts) return
+    if (pts.length >= 2)
+      addNoteStroke(
+        viewedId,
+        curErase.current
+          ? { id: uid('nk'), pts, color: '#000', width: getInkWidth(), erase: true }
+          : {
+              id: uid('nk'),
+              pts,
+              color: getInkColor(),
+              width: getInkWidth(),
+              kind: getInkMode() === 'highlighter' ? 'highlighter' : 'pen',
+            },
+      )
+    curStroke.current = null
+    curErase.current = false
+  }
   const inkDown = (e: React.PointerEvent) => {
     if (!penMode || !drawRef.current) return
+    // 삼성 S펜 등: 앞 획의 up이 유실됐는데(또는 up이 'touch'/다른 id로 와서 무시됨) 새 펜이 눌린 경우.
+    // 펜 접촉은 동시에 둘일 수 없으므로 = 앞 획이 안 끝난 것 → 그 획을 확정하고 상태를 초기화한다.
+    // (안 하면 새 펜이 두 번째 포인터=핀치로 오인돼 그리던 획이 통째로 사라짐.)
+    if (e.pointerType === 'pen' && noteInkIsPen.current && e.pointerId !== notePenId.current) {
+      commitPendingStroke()
+      notePenId.current = null
+      noteInkIsPen.current = false
+      pointers.current.clear()
+      paintInk()
+    }
     // 팜 리젝션: 펜으로 필기 중엔 손바닥/손가락(touch) 접촉을 무시 → 핀치 오인으로 획이 안 끊기게.
     if (noteInkIsPen.current && e.pointerType === 'touch') return
     try {
@@ -625,6 +669,8 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
       return
     }
     // 여기부터 실제 필기/지우기/올가미 → 이 포인터를 '현재 획 포인터'로 기록(팜 리젝션 기준).
+    // 새 획 시작 전, 앞 획이 커밋 안 된 채 남아 있으면(up 유실 등) 먼저 확정 → 사라지지 않게.
+    commitPendingStroke()
     notePenId.current = e.pointerId
     noteInkIsPen.current = e.pointerType === 'pen'
     const lp = localXY(e)
@@ -678,9 +724,12 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
     } else if (m === 'erasePart') {
       curErase.current = true
       curStroke.current = [x, y]
+      smoother.current = makeStabilizer(0) // 지우개는 보정 안 함
     } else if (m !== 'fill') {
       curErase.current = false
       curStroke.current = [x, y]
+      // 손떨림 보정 시작(형광펜은 직선이라 제외 → 0)
+      smoother.current = makeStabilizer(m === 'highlighter' ? 0 : getInkSmooth())
     }
     paintInk()
   }
@@ -752,7 +801,8 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
         const minGap = 0.6 / zoomRef.current // 너무 촘촘한 점은 건너뜀
         for (const ce of samples) {
           const l = localXY(ce)
-          const c = toContent(l.x, l.y)
+          const r = toContent(l.x, l.y)
+          const c = smoother.current.filter(r.x, r.y, ce.timeStamp) // 손떨림 보정(강도 0이면 원본)
           const k = curStroke.current.length
           if (k >= 2 && Math.hypot(c.x - curStroke.current[k - 2], c.y - curStroke.current[k - 1]) < minGap)
             continue
@@ -838,20 +888,7 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
       return
     }
     if (curStroke.current) {
-      addNoteStroke(
-        viewedId,
-        curErase.current
-          ? { id: uid('nk'), pts: curStroke.current, color: '#000', width: getInkWidth(), erase: true }
-          : {
-              id: uid('nk'),
-              pts: curStroke.current,
-              color: getInkColor(),
-              width: getInkWidth(),
-              kind: getInkMode() === 'highlighter' ? 'highlighter' : 'pen',
-            },
-      )
-      curStroke.current = null
-      curErase.current = false
+      commitPendingStroke()
       paintInk()
     }
   }

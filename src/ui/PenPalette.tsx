@@ -5,6 +5,7 @@ import {
   commitRecentColor,
   getInkColor,
   getInkMode,
+  getInkSmooth,
   getLastEraser,
   getPanTool,
   getHandMode,
@@ -13,6 +14,7 @@ import {
   getPalettePos,
   setInkColor,
   setInkMode,
+  setInkSmooth,
   setPanTool,
   setHandMode,
   setPenWidth,
@@ -82,6 +84,7 @@ export default function PenPalette() {
   const mode = getInkMode()
   const color = getInkColor()
   const width = getPenWidth()
+  const smooth = getInkSmooth()
   const recents = getRecentColors()
   const [pos, setPos] = useState(
     () =>
@@ -359,6 +362,27 @@ export default function PenPalette() {
         ))}
       </Tools>
 
+      {/* 손떨림 보정: 굵기 줄과 동일한 슬라이더 UI. 우측 값 = OFF/1~5. 펜·연필에만 적용. */}
+      <Section>Smoothing</Section>
+      <SizeRow>
+        <Step title="Less" onClick={() => setInkSmooth(smooth - 1)}>
+          −
+        </Step>
+        <Slider
+          type="range"
+          min={0}
+          max={5}
+          step={1}
+          value={smooth}
+          onChange={(e) => setInkSmooth(Number(e.target.value))}
+          title={smooth === 0 ? 'Smoothing off' : `Smoothing ${smooth}`}
+        />
+        <Step title="More" onClick={() => setInkSmooth(smooth + 1)}>
+          +
+        </Step>
+        <SizeVal title="Stroke smoothing">{smooth === 0 ? 'OFF' : smooth}</SizeVal>
+      </SizeRow>
+
       {/* 지우개(명시) */}
       <Section>Eraser</Section>
       <Tools>
@@ -372,24 +396,7 @@ export default function PenPalette() {
         ))}
       </Tools>
 
-      {/* 올가미 */}
-      <Tools>
-        <Tool
-          $on={mode === 'lasso'}
-          title="Lasso — cut & move drawing"
-          onClick={() => setInkMode('lasso')}
-          style={{ flexDirection: 'row', gap: 6, padding: '8px' }}
-        >
-          <span className="i">
-            <ToolIcon m="lasso" size={18} />
-          </span>
-          <span className="l" style={{ fontSize: 12 }}>
-            Lasso (cut &amp; move)
-          </span>
-        </Tool>
-      </Tools>
-
-      {/* 굵기(− ● +) */}
+      {/* 굵기(− ● +) — 올가미는 굵기 영향을 안 받으니 그 위에 둔다 */}
       <SizeRow>
         <Step title="Thinner" onClick={() => setPenWidth(width - 1)}>
           −
@@ -411,6 +418,23 @@ export default function PenPalette() {
           {width}
         </SizeVal>
       </SizeRow>
+
+      {/* 올가미 */}
+      <Tools>
+        <Tool
+          $on={mode === 'lasso'}
+          title="Lasso — cut & move drawing"
+          onClick={() => setInkMode('lasso')}
+          style={{ flexDirection: 'row', gap: 6, padding: '8px' }}
+        >
+          <span className="i">
+            <ToolIcon m="lasso" size={18} />
+          </span>
+          <span className="l" style={{ fontSize: 12 }}>
+            Lasso (cut &amp; move)
+          </span>
+        </Tool>
+      </Tools>
 
       {/* 색상: 한 줄(흰·검·빨·파·초) + 그라데이션(→상세 팝업) + 스포이드 · 현재 HEX 표시 */}
       <Section>

@@ -1,13 +1,13 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
-import { getInkMode, setInkMode } from '../store'
+import { getInkMode, getSnapshot, setInkMode, subscribe } from '../store'
 import { useIsMobile } from '../useIsMobile'
 import { ToolIcon } from './PenPalette'
 import * as S from './Toolbar.styles'
 
 // ✎ 펜 버튼 = 방향 조이스틱. 펜/손가락 동일.
 //  · 탭            = 펜 켜기/끄기 (탭은 버튼을 움직이지 않음)
-//  · 펜 켠 채 끌기  = ← 형광펜 · ↖ 펜 · ↗ 올가미 · → 지우개 (버튼 주위 아이콘 색반전, 놓으면 그걸로)
+//  · 펜 켠 채 끌기  = ← 펜 · ↖ 형광펜 · ↗ 올가미 · → 지우개 (버튼 주위 아이콘 색반전, 놓으면 그걸로)
 // ⚠️ 제스처 중 React setState를 절대 하지 않는다(포인터 캡처가 풀려 '먹통' 되던 원인).
 //    네이티브 리스너 + DOM 직접조작으로만 처리하고, 도구 적용(setInkMode)은 '놓는 순간' 1회.
 const TRIG = 52 // 이만큼 끌어야 전환(옆 버튼 자리)
@@ -16,13 +16,16 @@ const DEAD = 8 // 이보다 작으면 탭(버튼 안 움직임)
 
 type Dir = 'c' | 'l' | 'r' | 'ul' | 'ur'
 const TOOL: Record<Exclude<Dir, 'c'>, 'highlighter' | 'eraser' | 'pen' | 'lasso'> = {
-  l: 'highlighter',
+  l: 'pen',
   r: 'eraser',
-  ul: 'pen',
+  ul: 'highlighter',
   ur: 'lasso',
 }
 
 export default function PenStick() {
+  // 잉크 모드 변경에 구독 → 노트 진입 등으로 펜이 꺼지면 버튼 활성 상태도 즉시 갱신
+  // (구독 없으면 펜이 실제로 꺼졌는데 버튼만 켜진 채 남는 stale 버그 발생)
+  useSyncExternalStore(subscribe, getSnapshot)
   const mode = getInkMode()
   const active = !!mode
   const fab = useIsMobile() // 폭≤640 = 하단 FAB 레이아웃 → 포털로 띄워 노트 위에도 보이게
@@ -140,10 +143,10 @@ export default function PenStick() {
         createPortal(
           <S.PenGuide ref={guideRef}>
             <S.GuideChip data-dir="ul" $pos="ul">
-              <ToolIcon m="pen" size={20} />
+              <ToolIcon m="highlighter" size={20} />
             </S.GuideChip>
             <S.GuideChip data-dir="l" $pos="l">
-              <ToolIcon m="highlighter" size={20} />
+              <ToolIcon m="pen" size={20} />
             </S.GuideChip>
             <S.GuideChip data-dir="ur" $pos="ur">
               <ToolIcon m="lasso" size={20} />

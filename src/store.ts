@@ -477,6 +477,7 @@ type InkPrefs = {
   penW: number
   hlW: number
   eraserW: number
+  smooth: number // 손떨림 보정 강도(0=끔 ~ 5=최대). 펜/연필 필기에만 적용.
   palettePos: { x: number; y: number } | null
 }
 const DEFAULT_INK: InkPrefs = {
@@ -486,6 +487,7 @@ const DEFAULT_INK: InkPrefs = {
   penW: 3,
   hlW: 20,
   eraserW: 24,
+  smooth: 0,
   palettePos: null,
 }
 let inkPrefs: InkPrefs = loadInkPrefs()
@@ -588,6 +590,13 @@ const inkWidthKey = (): 'penW' | 'hlW' | 'eraserW' =>
 export const getInkWidth = () => inkPrefs[inkWidthKey()]
 export function setInkWidth(w: number) {
   inkPrefs[inkWidthKey()] = Math.max(1, Math.min(100, Math.round(w)))
+  saveInkPrefs()
+  bumpUI()
+}
+// 손떨림 보정 강도(0~5). 펜/연필 필기 입력점을 One-Euro 필터로 다듬어 글씨를 매끄럽게.
+export const getInkSmooth = () => inkPrefs.smooth
+export function setInkSmooth(v: number) {
+  inkPrefs.smooth = Math.max(0, Math.min(5, Math.round(v)))
   saveInkPrefs()
   bumpUI()
 }

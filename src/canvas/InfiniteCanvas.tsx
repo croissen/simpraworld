@@ -2,11 +2,13 @@ import { useEffect, useRef } from 'react'
 import type { SEdge, Shape, SpaceItem } from '../types'
 import { measureTextNode, textLines, wrappedHeight } from '../textMeasure'
 import { fillRich, measureRich } from './emoji'
+import { makeStabilizer } from '../oneEuro'
 import * as S from './InfiniteCanvas.styles'
 import {
   addShapeAt,
   bumpUI,
   getSnapshot,
+  getInkSmooth,
   cancelDrawNode,
   cancelSpine,
   canNestInto,
@@ -1344,8 +1346,25 @@ export default function InfiniteCanvas() {
     // 닿아도 무시 → 두 번째 포인터가 핀치줌으로 오인돼 획이 통째로 취소되던 현상 방지.
     let inkPointerId: number | null = null
     let inkIsPen = false
+    // 손떨림 보정: 획 시작마다 현재 강도로 새로 만든다(0이면 무보정 통과). 펜/연필 필기에만.
+    let inkSmoother = makeStabilizer(0)
     // 우클릭 임시 지우개(펜 활성 중 우클릭 드래그 = 마지막에 고른 지우개로 지움)
     let rightErase = false
+    // 그리던 잉크 획을 확정(onUp / up 유실복구 공용). 현재 도구 기준으로 저장.
+    const commitInkStroke = () => {
+      if (rightErase) {
+        if (inkErasedAny) commitStrokes() // 우클릭 임시 지우개: 지운 것만 확정
+      } else {
+        const im = getInkMode()
+        if (isDrawKind(im)) {
+          addStroke(inkPts, getPenColor(), getPenWidth(), im) // 획 확정(되돌리기 1스텝 + 저장)
+        } else if (im === 'erasePart') {
+          if (inkErasing && inkPts.length >= 2) addEraseMark(inkPts, getPenWidth()) // 지움 자국 확정
+        } else if (inkErasedAny) {
+          commitStrokes() // 지운 게 있으면 1스텝으로 확정
+        }
+      }
+    }
     // 올가미: 그리는 중인 폴리곤(월드 점열) / 선택 이동 시작점(월드) / 이번 드래그 이동 여부
     let lassoPts: number[] = []
     let lassoLast: { x: number; y: number } | null = null
@@ -1629,6 +1648,24 @@ export default function InfiniteCanvas() {
 
     function onDown(e: PointerEvent) {
       lastPointerType = e.pointerType || 'mouse'
+      // 삼성 S펜 등: 앞 획의 up이 유실됐는데(또는 up이 'touch'/다른 id로 와서 무시됨) 새 펜이 눌린 경우.
+      // 펜 접촉은 동시에 둘일 수 없으므로 = 앞 획이 안 끝난 것 → 그 획을 확정하고 상태를 초기화한다.
+      // (안 하면 새 펜이 두 번째 포인터=핀치로 오인돼 그리던 획이 통째로 사라짐.)
+      if (e.pointerType === 'pen' && mode === 'ink' && inkIsPen) {
+        commitInkStroke()
+        inkPts = []
+        inkErasing = false
+        inkErasedAny = false
+        inkCursor = null
+        lastEraseW = null
+        inkTouchPending = null
+        rightErase = false
+        inkPointerId = null
+        inkIsPen = false
+        pointers.clear()
+        mode = 'none'
+        markDirty()
+      }
       // 팜 리젝션: 펜으로 필기 중엔 손바닥/손가락(touch) 접촉을 완전히 무시(캡처·핀치 안 함) → 획 안 끊김.
       if (mode === 'ink' && inkIsPen && e.pointerType === 'touch') return
       if (e.button === 2) {
@@ -1726,6 +1763,7 @@ export default function InfiniteCanvas() {
         inkIsPen = e.pointerType === 'pen'
         if (isDrawKind(ink)) {
           mode = 'ink'
+          inkSmoother = makeStabilizer(getInkSmooth()) // 이 획의 손떨림 보정 시작
           if (e.pointerType === 'touch') {
             // 터치: 바로 시작 안 하고 대기 → 두 손가락이면 팬으로 넘어감
             inkTouchPending = { wx: w.x, wy: w.y }
@@ -2062,7 +2100,8 @@ export default function InfiniteCanvas() {
         } else if (isDrawKind(im)) {
           for (const ce of samples) {
             const lp = localPos(ce)
-            const w = s2w(lp.x, lp.y)
+            const raw = s2w(lp.x, lp.y)
+            const w = inkSmoother.filter(raw.x, raw.y, ce.timeStamp) // 손떨림 보정(강도 0이면 원본)
             const n = inkPts.length
             // 너무 촘촘한 점은 건너뜀(월드 0.5px 미만) → 데이터·렌더 절약
             if (n >= 2 && Math.hypot(w.x - inkPts[n - 2], w.y - inkPts[n - 1]) < 0.5 / getCamera().zoom)
@@ -2387,18 +2426,7 @@ export default function InfiniteCanvas() {
         commitMove(drawOp.pid) // 생성+크기 확정 → 히스토리 1스텝 + 저장
         setDrawTool(null) // 도구는 1회성(다시 그리려면 메뉴에서 다시 선택)
       } else if (mode === 'ink') {
-        if (rightErase) {
-          if (inkErasedAny) commitStrokes() // 우클릭 임시 지우개: 지운 것만 확정
-        } else {
-          const im = getInkMode()
-          if (isDrawKind(im)) {
-            addStroke(inkPts, getPenColor(), getPenWidth(), im) // 획 확정(되돌리기 1스텝 + 저장)
-          } else if (im === 'erasePart') {
-            if (inkErasing && inkPts.length >= 2) addEraseMark(inkPts, getPenWidth()) // 지움 자국 확정
-          } else if (inkErasedAny) {
-            commitStrokes() // 지운 게 있으면 1스텝으로 확정
-          }
-        }
+        commitInkStroke()
         // 도구 모드는 유지(연속 사용) — inkMode는 그대로 둠
       } else if (mode === 'lasso') {
         lassoSelectStrokes(lassoPts) // 폴리곤(자동 닫힘) 안의 획 선택
