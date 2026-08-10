@@ -1,4 +1,5 @@
 import { get, set } from 'idb-keyval'
+import { Capacitor } from '@capacitor/core'
 import { DEFAULT_BG, emptyDoc, uid } from './types'
 import type { Asset, ComponentDef, Frame, InkKind, InkStroke, NodeType, NoteStroke, Placement, SEdge, Shape, SimpraWorldDoc, SNode, SpaceItem } from './types'
 import { makeSampleWorld } from './sampleWorld'
@@ -16,9 +17,14 @@ export const DEFAULT_BADGE_SIZE = 14 // 배지 기본 폰트 크기(월드 단�
 
 // ── 내부 상태 ────────────────────────────────────────────────
 let doc: SimpraWorldDoc = emptyDoc()
-// 모바일은 기본 줌 75%(좁은 화면에 더 많이 보이게). PC는 100%.
-export const defaultZoom = () =>
-  typeof window !== 'undefined' && window.innerWidth <= 640 ? 0.75 : 1
+// 모바일 화면(좁은 세로)은 기본 줌 75%, PC(넓은 가로)는 100%.
+// 앱은 세로모드면 모바일 취급(폭 무관), 눕히면 PC처럼. 웹은 폭(≤640) 기준.
+const isMobileScreen = () => {
+  if (typeof window === 'undefined') return false
+  if (Capacitor.isNativePlatform()) return window.innerHeight >= window.innerWidth // 세로모드
+  return window.innerWidth <= 640
+}
+export const defaultZoom = () => (isMobileScreen() ? 0.75 : 1)
 let camera: Camera = { x: 0, y: 0, zoom: defaultZoom() }
 let spacePath: string[] = [] // 진입한 폴더 node id 스택 (빈 배열 = 최상위)
 // 캔버스 그리기 영역 크기(px). InfiniteCanvas가 리사이즈마다 갱신.
@@ -195,8 +201,8 @@ export function setGridBold(on: boolean) {
 // 프레임(화면 영역)·요소 위치·표시여부 모두 이 활성 우주를 기준으로 한다.
 // 기본값만 현재 기기로 시작(폰=mobile, 그 외=pc).
 export type FrameTarget = 'pc' | 'mobile'
-const isMobileDevice = () => typeof window !== 'undefined' && window.innerWidth <= 640
-const deviceTarget = (): FrameTarget => (isMobileDevice() ? 'mobile' : 'pc')
+// 앱=세로모드면 mobile, 눕히면 pc. 웹=폭 기준. (isMobileScreen 재사용)
+const deviceTarget = (): FrameTarget => (isMobileScreen() ? 'mobile' : 'pc')
 
 // 활성 우주(저장 안 함, 새로고침 시 기기 기본값으로). 모든 우주별 분기의 기준.
 let frameTarget: FrameTarget = deviceTarget()
@@ -1037,8 +1043,11 @@ export function selectionToDoc(pids: Iterable<string> = selection): SimpraWorldD
     if (!sub) continue
     for (const sp of sub.placements)
       if (sp.space === null) {
-        sp.x = p.x
-        sp.y = p.y
+        // ⚠️ 현재 보고 있는 기기 좌표(모바일=mx,my / PC=x,y)를 캡처 →
+        //    모바일에서 옮겨둔 배치(스플라인 축 포함)가 컴포넌트/복사에 그대로 담김.
+        const pos = placementPos(p)
+        sp.x = pos.x
+        sp.y = pos.y
         sp.locked = p.locked
         sp.groupId = p.groupId // 그룹 유지
         sp.spineParent = p.spineParent // 관절(척추화) 부모 — 임시로 원본 pid, 아래서 새 루트 id로 교체

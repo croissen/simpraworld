@@ -1128,10 +1128,10 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
         if (native) {
           try {
             await saveImageToGallery(blob, fn)
-            alert('갤러리에 저장했어요')
+            alert('Saved to gallery')
           } catch (e) {
             console.warn('gallery save failed', e)
-            alert('갤러리 저장 실패: ' + ((e as Error).message || ''))
+            alert('Gallery save failed: ' + ((e as Error).message || ''))
           }
         } else {
           downloadImage(blob, fn)
@@ -1289,18 +1289,18 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
             {native ? (
               <>
                 {/* 앱: 갤러리에 바로 저장 + 시스템 공유(타 앱 전송) 둘 다 제공 */}
-                <S.ShareItem onClick={shareGallery}>🖼 갤러리에 저장</S.ShareItem>
+                <S.ShareItem onClick={shareGallery}>🖼 Save to gallery</S.ShareItem>
                 {isMobile && (
-                  <S.ShareItem onClick={shareGalleryFull}>🖼 갤러리에 저장 (여백 포함)</S.ShareItem>
+                  <S.ShareItem onClick={shareGalleryFull}>🖼 Save to gallery (full)</S.ShareItem>
                 )}
-                <S.ShareItem onClick={shareSheet}>📤 공유</S.ShareItem>
+                <S.ShareItem onClick={shareSheet}>📤 Share</S.ShareItem>
               </>
             ) : (
               <>
                 <S.ShareItem onClick={shareGallery}>🖼 Save image</S.ShareItem>
                 {/* 'full'은 여백 낙서까지 포함 → 여백 낙서는 모바일 전용이라 PC에선 숨김 */}
                 {isMobile && (
-                  <S.ShareItem onClick={shareGalleryFull}>🖼 Save full image (여백 포함)</S.ShareItem>
+                  <S.ShareItem onClick={shareGalleryFull}>🖼 Save full image</S.ShareItem>
                 )}
                 {/* 모바일은 이미지 클립보드 복사가 안 돼서 제외 */}
                 {!isMobile && <S.ShareItem onClick={shareClipboard}>📋 Copy image</S.ShareItem>}

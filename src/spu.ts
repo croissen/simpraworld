@@ -103,13 +103,13 @@ export async function downloadBlob(blob: Blob, filename: string) {
     // 앱: 다운로드 폴더의 spu 하위폴더(Download/spu/)에 직접 저장.
     try {
       const where = await saveToDownloads(blob, filename)
-      alert(`저장됨: ${where}`)
+      alert(`Saved to ${where}`)
     } catch (e) {
       // 안드11+ 스코프드 스토리지 등으로 Download 직접 쓰기가 막히면 → 공유 시트로 저장(Files/드라이브 등)
       try {
         await shareFileNative(blob, filename)
       } catch {
-        alert('저장 실패: ' + ((e as Error)?.message || '알 수 없는 오류'))
+        alert('Save failed: ' + ((e as Error)?.message || 'unknown error'))
       }
     }
     return
