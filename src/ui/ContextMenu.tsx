@@ -27,6 +27,7 @@ import { exportSelectionOrSpace } from '../currentFile'
 import { fileToImage } from '../image'
 import { importSpu, pickSpuFile } from '../spu'
 import { useIsTouch } from '../useIsMobile'
+import { useOverlay } from '../overlays'
 import * as S from './ContextMenu.styles'
 
 // 캔버스 우클릭 메뉴(피그마식). 항목은 대상 노드/클립보드 유무에 따라 가변.
@@ -39,6 +40,7 @@ export default function ContextMenu({
 }) {
   const cm = getContextMenu()
   const isMobile = useIsTouch() // 앱(네이티브)·터치 = 모바일 동작(Copy=즉시 복제, Paste 숨김). BlueStacks도 앱이면 여기.
+  useOverlay(!!cm, closeContextMenu) // 뒤로가기로 우클릭 메뉴 닫기
 
   // 붙여넣기: 내부 클립보드 우선, 없으면 OS 클립보드의 사진을 커서 위치에
   async function pasteHere(wx: number, wy: number) {

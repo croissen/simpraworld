@@ -1049,7 +1049,8 @@ export function selectionToDoc(pids: Iterable<string> = selection): SimpraWorldD
         sp.x = pos.x
         sp.y = pos.y
         sp.locked = p.locked
-        sp.groupId = p.groupId // 그룹 유지
+        sp.groupId = p.groupId // 일반 그룹 유지
+        sp.uniqueGroupId = p.uniqueGroupId // 유니크 그룹 유지
         sp.spineParent = p.spineParent // 관절(척추화) 부모 — 임시로 원본 pid, 아래서 새 루트 id로 교체
         sp.spineJX = p.spineJX
         sp.spineJY = p.spineJY
@@ -1259,9 +1260,15 @@ export function useFromLibrary(nodeId: string) {
   if (space !== null && isCyclic(nodeId, space)) return // 폴더 순환 방지
   const existing = doc.placements.find((p) => p.nodeId === nodeId && p.space === space)
   if (existing) {
-    // 숨김 해제만 — 원래 있던 좌표 그대로 다시 나타난다(위치를 절대 바꾸지 않음).
-    writeStored(existing, false)
-    selection = new Set([existing.id])
+    // 숨김 해제만 — 원래 있던 좌표·모양 그대로. 그룹/스플라인 단위면 전체를 함께 꺼냄.
+    const unit = new Set<string>([existing.id])
+    for (const m of groupMembers(existing.id)) unit.add(m)
+    for (const g of spineGroup(existing.id)) unit.add(g)
+    for (const id of unit) {
+      const p = getPlacement(id)
+      if (p) writeStored(p, false)
+    }
+    selection = new Set(unit)
   } else {
     const pl: Placement = { id: uid('p'), nodeId, space, x: camera.x, y: camera.y }
     doc.placements.push(pl)
@@ -1270,9 +1277,16 @@ export function useFromLibrary(nodeId: string) {
   changed()
 }
 
-/** 캔버스 개체를 보관함으로 보내기(숨김) — 활성 우주에서만. 다중선택이면 선택 전체. */
+/** 캔버스 개체를 보관함으로 보내기(숨김). 그룹/스플라인 단위면 전체를 함께 보관.
+ *  클릭 대상이 현재 다중선택에 포함될 때만 선택 전체를 보관하고, 아니면 그 대상만(라이브러리 개별 Hide). */
 export function storePlacement(pid: string) {
-  const pids = selection.size ? [...selection] : [pid] // 선택 있으면 전부, 없으면 대상 하나
+  const base = selection.has(pid) && selection.size > 1 ? [...selection] : [pid]
+  const pids = new Set<string>()
+  for (const id of base) {
+    pids.add(id)
+    for (const m of groupMembers(id)) pids.add(m) // 단위(일반/유니크 그룹) 전체
+    for (const g of spineGroup(id)) pids.add(g) // 스플라인 그룹 전체
+  }
   for (const id of pids) {
     const p = getPlacement(id)
     if (p) writeStored(p, true)
@@ -1378,11 +1392,26 @@ export function goTo(spaceId: string | null) {
 
 // ── 선택 (placement id 집합) ────────────────────────────────
 /** additive=true(Shift) → 토글, 아니면 단독 선택. null → 전체 해제 */
-/** 그룹 확장: pid가 그룹에 속하면 같은 그룹의 모든 배치(같은 공간)를 함께 반환. */
+// element/photo만 유니크 그룹으로 '한 객체' 통합 가능. folder/memo/text는 항상 개별.
+const isUnifiablePid = (pid: string): boolean => {
+  const p = getPlacement(pid)
+  const n = p ? getNode(p.nodeId) : undefined
+  return !!n && (n.type === 'shape' || n.type === 'photo')
+}
+/** 이동/선택 단위 id — 바깥(일반) groupId 우선, 없으면 유니크 그룹. */
+const unitKey = (p: Placement): { id: string; field: 'groupId' | 'uniqueGroupId' } | null =>
+  p.groupId ? { id: p.groupId, field: 'groupId' } : p.uniqueGroupId ? { id: p.uniqueGroupId, field: 'uniqueGroupId' } : null
+
+/** 그룹 확장: pid가 (일반/유니크) 그룹에 속하면 같은 단위의 모든 배치를 함께 반환.
+ *  스플라인(척추)은 여기서 확장하지 않는다 — 관절이 자유롭게 움직여야 하므로 선택·이동은 '개별'.
+ *  (스플라인을 '한 단위'로 다루는 건 라이브러리 표시/보관·컴포넌트 저장에서 spineGroup으로 따로 처리하고,
+ *   몸통을 잡고 끌면 rigidUnit이 spineDescendants로 하위를 함께 옮긴다.) */
 function groupMembers(pid: string): string[] {
   const p = getPlacement(pid)
-  if (!p || !p.groupId) return [pid]
-  return doc.placements.filter((q) => q.groupId === p.groupId && q.space === p.space).map((q) => q.id)
+  if (!p) return [pid]
+  const u = unitKey(p)
+  if (u) return doc.placements.filter((q) => q[u.field] === u.id && q.space === p.space).map((q) => q.id)
+  return [pid]
 }
 
 export function select(pid: string | null, additive = false) {
@@ -1403,38 +1432,68 @@ export function select(pid: string | null, additive = false) {
 }
 
 // ── 그룹화 ────────────────────────────────────────────────────
-/** 선택(2개 이상)을 한 그룹으로 묶음 → 이후 하나만 클릭해도 함께 선택·이동. */
+/** 선택(2개 이상)을 한 그룹으로 묶음.
+ *  · 전부 element/photo && 아무도 아직 그룹(유니크·일반)에 안 묶임 → '유니크 그룹'(라이브러리에 1개 객체)
+ *  · 그 외(하나라도 이미 그룹돼 있거나 folder/note 섞임) → '일반 그룹'(안의 유니크 그룹은 그대로 유지=중첩) */
 export function groupSelection() {
   const pids = [...selection]
   if (pids.length < 2) return
-  const gid = uid('g')
+  const allUnifiable = pids.every(isUnifiablePid)
+  const noneGrouped = pids.every((pid) => {
+    const p = getPlacement(pid)
+    return !!p && !p.groupId && !p.uniqueGroupId
+  })
+  // 스파인(척추)에 물린 개체는 폴더·문서처럼 '독립 단위' → 유니크 그룹으로 통합하지 않고 항상 일반 그룹.
+  // (유니크=강체 한 객체라 관절 회전과 충돌. 스파인은 라이브러리에서만 하나의 단위로 표시)
+  const noneSpined = pids.every((pid) => !isSpined(pid) && spineDescendants(pid).length === 0)
+  const makeUnique = allUnifiable && noneGrouped && noneSpined
+  const gid = uid(makeUnique ? 'ug' : 'g')
   for (const pid of pids) {
     const p = getPlacement(pid)
-    if (p) p.groupId = gid
+    if (!p) continue
+    if (makeUnique) p.uniqueGroupId = gid
+    else p.groupId = gid // 일반 그룹: 기존 uniqueGroupId(중첩된 유니크 그룹)는 건드리지 않음
   }
   if (!doc.groups) doc.groups = {}
-  doc.groups[gid] = { rot: 0 } // 그룹 회전값 초기화
+  doc.groups[gid] = { rot: 0 } // 회전값(유니크·일반 공통)
   changed()
 }
-/** 선택된 것들의 그룹 해제. */
+/** 선택 해제: 바깥 한 겹만 벗긴다. 일반 그룹이 있으면 groupId만 제거(안의 유니크 그룹은 유지),
+ *  일반 그룹이 없으면 uniqueGroupId 제거(개별로 분리). */
 export function ungroupSelection() {
-  for (const pid of selection) {
+  const pids = [...selection]
+  const anyOuter = pids.some((pid) => !!getPlacement(pid)?.groupId)
+  for (const pid of pids) {
     const p = getPlacement(pid)
-    if (p) delete p.groupId
+    if (!p) continue
+    if (anyOuter) delete p.groupId
+    else delete p.uniqueGroupId
   }
   changed()
 }
-/** 선택 전체가 같은 한 그룹인지(=Ungroup 버튼 노출 조건). */
+/** 선택 전체가 같은 한 단위(일반 or 유니크 그룹)인지(=Ungroup 버튼 노출 조건). */
 export function selectionGrouped(): boolean {
   const pids = [...selection]
   if (pids.length < 2) return false
-  const g0 = getPlacement(pids[0])?.groupId
-  return !!g0 && pids.every((pid) => getPlacement(pid)?.groupId === g0)
+  const u0 = getPlacement(pids[0]) && unitKey(getPlacement(pids[0])!)
+  if (!u0) return false
+  return pids.every((pid) => {
+    const p = getPlacement(pid)
+    const u = p && unitKey(p)
+    return !!u && u.id === u0.id
+  })
 }
-/** 현재 선택이 한 그룹이면 그 groupId, 아니면 null */
+/** 현재 선택이 한 단위면 그 단위 id(일반 groupId 우선, 없으면 유니크), 아니면 null */
 export function selectedGroupId(): string | null {
   if (!selectionGrouped()) return null
-  return getPlacement([...selection][0])?.groupId ?? null
+  const p = getPlacement([...selection][0])
+  return p ? unitKey(p)?.id ?? null : null
+}
+/** 현재 선택이 '유니크 그룹'인가(일반 groupId 없이 uniqueGroupId만) → 선택 박스 보라색용. */
+export function selectedGroupIsUnique(): boolean {
+  if (!selectionGrouped()) return false
+  const p = getPlacement([...selection][0])
+  return !!p && !p.groupId && !!p.uniqueGroupId
 }
 /** 그룹 확장 없이 한 배치만 단독 선택(그룹 안에서 개별 요소 편집용). */
 export function selectSingle(pid: string) {
@@ -1444,6 +1503,15 @@ export function selectSingle(pid: string) {
   changed()
 }
 export const getGroupRot = (gid: string) => doc.groups?.[gid]?.rot || 0
+/** 유니크 그룹 이름(라이브러리 표시용). 없으면 ''. */
+export const getGroupName = (gid: string) => doc.groups?.[gid]?.name || ''
+/** 유니크 그룹 이름 변경. */
+export function renameGroupUnit(gid: string, name: string) {
+  if (!doc.groups) doc.groups = {}
+  const g = doc.groups[gid] || { rot: 0 }
+  doc.groups[gid] = { ...g, name: name.trim() || undefined }
+  changed()
+}
 /** 그룹 회전각 누적(라이브) — 선택 박스 방향 갱신용 */
 export function addGroupRotLive(gid: string, ddeg: number) {
   if (!doc.groups) doc.groups = {}
@@ -1491,11 +1559,26 @@ export function flipSelection(axis: 'x' | 'y') {
   changed()
 }
 
-/** 그룹의 방향 있는 경계 상자(OBB) — 회전해도 크기가 안 변하는 안정 박스. 월드 좌표. */
+/** 그룹(gid) 멤버 + 그 멤버들이 스플라인으로 연결된 몸통(루트)·전 하위까지 = '연결된 전체 그림' 배치들.
+ *  (현재 공간·미보관만) 스플라인 안 걸린 순수 그룹이면 그냥 그룹 멤버 그대로.
+ *  → 그룹의 OBB·크기조절·회전이 몸통을 포함한 그림 전체를 한 덩어리로 다루게 하는 근거. */
+function groupFigurePlacements(gid: string): Placement[] {
+  const inSpace = (p: Placement | undefined): p is Placement =>
+    !!p && p.space === getCurrentSpace() && !isStored(p)
+  const members = doc.placements.filter((p) => (p.groupId === gid || p.uniqueGroupId === gid) && inSpace(p))
+  const ids = new Set<string>()
+  for (const m of members) for (const id of spineGroup(m.id)) ids.add(id)
+  return [...ids].map((id) => getPlacement(id)).filter(inSpace)
+}
+/** 그룹 조작(회전 등)이 실제로 움직일 배치 id들 = 연결된 전체 그림. */
+export function groupFigurePids(gid: string): string[] {
+  return groupFigurePlacements(gid).map((p) => p.id)
+}
+
+/** 그룹의 방향 있는 경계 상자(OBB) — 회전해도 크기가 안 변하는 안정 박스. 월드 좌표.
+ *  멤버뿐 아니라 스플라인으로 연결된 몸통·하위까지 감싼다(=그림 전체가 하나의 그룹 박스). */
 export function groupOBB(gid: string): { cx: number; cy: number; hw: number; hh: number; rot: number } | null {
-  const members = doc.placements.filter(
-    (p) => p.groupId === gid && p.space === getCurrentSpace() && !isStored(p),
-  )
+  const members = groupFigurePlacements(gid)
   if (!members.length) return null
   const rot = doc.groups?.[gid]?.rot || 0
   const rad = (rot * Math.PI) / 180
@@ -1550,12 +1633,11 @@ export function groupOBB(gid: string): { cx: number; cy: number; hw: number; hh:
   }
 }
 
-/** 그룹 멤버들의 드래그 시작 스냅샷 반환(스케일 원본). */
+/** 그룹 조작(크기조절)의 드래그 시작 스냅샷 — 연결된 그림 전체(몸통 포함) 기준. */
 export function groupScaleSnapshot(
   gid: string,
 ): { pid: string; nodeId: string; x: number; y: number; w: number; h: number }[] {
-  return doc.placements
-    .filter((p) => p.groupId === gid && p.space === getCurrentSpace() && !isStored(p))
+  return groupFigurePlacements(gid)
     .map((p) => {
       const pos = placementPos(p)
       const n = getNode(p.nodeId)
@@ -1646,8 +1728,8 @@ export function beginSpineFor(childPid: string) {
   const p = getPlacement(childPid)
   if (!p) return
   spineWizard = { childPid, step: 1 }
-  // 그룹이면 그룹 전체를 자식으로(선택 유지), 아니면 그 하나만
-  selection = new Set(p.groupId ? groupMembers(childPid) : [childPid])
+  // 그룹(일반/유니크)이면 전체를 자식으로(선택 유지), 아니면 그 하나만
+  selection = new Set(groupMembers(childPid))
   bumpUI()
   markDirty()
 }
@@ -1668,10 +1750,9 @@ export function setSpineChildAnchor(wx: number, wy: number) {
 export function finishSpine(parentPid: string, wx: number, wy: number) {
   if (!spineWizard || spineWizard.step !== 2 || spineWizard.childAX === undefined) return
   const childPid = spineWizard.childPid
-  const cp = getPlacement(childPid)
   const par = getPlacement(parentPid)
-  // 그룹이면 멤버 전체가 자식
-  const members = cp?.groupId ? groupMembers(childPid) : [childPid]
+  // 그룹(일반/유니크)이면 멤버 전체가 자식
+  const members = groupMembers(childPid)
   if (!par || members.includes(parentPid) || members.some((m) => spineWouldCycle(m, parentPid))) {
     spineWizard = null
     bumpUI()
@@ -1709,12 +1790,13 @@ export function finishSpine(parentPid: string, wx: number, wy: number) {
     const pos = placementPos(p)
     writePos(p, pos.x + dx, pos.y + dy)
   }
+  // 스플라인은 유니크 그룹으로 만들지 않는다(관절 회전이 강체화와 충돌). 스플라인은 독립 개념 —
+  // 라이브러리 표시/보관에서만 '하나의 단위'(폴더/노트처럼)로 다룬다.
   spineWizard = null
   changed()
 }
 export function unspine(pid: string) {
-  const p = getPlacement(pid)
-  const members = p?.groupId ? groupMembers(pid) : [pid] // 그룹이면 전체 해제
+  const members = groupMembers(pid) // 단위(일반/유니크 그룹) 전체 해제
   for (const m of members) {
     const mp = getPlacement(m)
     if (mp) {
@@ -1728,8 +1810,7 @@ export function unspine(pid: string) {
 
 /** 강체 단위: pid가 그룹이면 그룹 멤버 전체, 아니면 자기 하나 + 각자의 척추 하위 전체. */
 export function rigidUnit(pid: string): string[] {
-  const p = getPlacement(pid)
-  const base = p?.groupId ? groupMembers(pid) : [pid]
+  const base = groupMembers(pid) // 단위(일반/유니크 그룹) 전체, 안 묶였으면 [pid]
   const out = new Set<string>(base)
   for (const b of base) for (const d of spineDescendants(b)) out.add(d)
   return [...out]
@@ -2306,8 +2387,12 @@ export function saveSelectionAsComponent(name?: string): ComponentDef | undefine
   // 스플라인(척추)으로 묶인 개체는 어느 걸 골라도 그룹 '전체'(루트+전 하위)를 함께 포함
   // → 컴포넌트에 '연결된 상태'로 들어감. (자식만 골라도 부모·형제까지 딸려옴)
   const pids = new Set(selection)
-  for (const pid of [...pids]) for (const g of spineGroup(pid)) pids.add(g)
-  const cdoc = selectionToDoc(pids) // 다중-루트 미니문서(상대 위치 + 척추 관절 유지)
+  // 스플라인 그룹 전체 + (일반/유니크)그룹 단위 전체를 함께 포함 → 연결된 상태로 컴포넌트에.
+  for (const pid of [...pids]) {
+    for (const g of spineGroup(pid)) pids.add(g)
+    for (const m of groupMembers(pid)) pids.add(m)
+  }
+  const cdoc = selectionToDoc(pids) // 다중-루트 미니문서(상대 위치 + 척추 관절 + 그룹 유지)
   if (!cdoc.nodes.length) return
   const c: ComponentDef = {
     id: uid('c'),
@@ -2365,7 +2450,8 @@ function placeDoc(incoming: SimpraWorldDoc, space: string | null, dx: number, dy
       x: isRoot ? p.x + dx : p.x,
       y: isRoot ? p.y + dy : p.y,
       locked: p.locked, // 위치잠금 유지
-      groupId: p.groupId ? remap(p.groupId) : undefined, // 그룹 유지(새 그룹 id로 remap)
+      groupId: p.groupId ? remap(p.groupId) : undefined, // 일반 그룹 유지(새 id로 remap)
+      uniqueGroupId: p.uniqueGroupId ? remap(p.uniqueGroupId) : undefined, // 유니크 그룹 유지
       spineParent: p.spineParent ? remap(p.spineParent) : undefined, // 관절 부모 유지
       spineJX: p.spineJX,
       spineJY: p.spineJY,

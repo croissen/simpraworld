@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import styled from 'styled-components'
 import type { Shape } from '../types'
+import { useOverlay } from '../overlays'
 
 // "+ Element" → 그릴 도형을 고르는 팝업(모바일·PC 공용). 고르면 그리기 모드 진입.
 const SHAPES: { v: Shape; label: string; icon: string }[] = [
@@ -18,6 +19,7 @@ export default function ShapePicker({
   onPick: (s: Shape) => void
   onClose: () => void
 }) {
+  useOverlay(true, onClose) // 뒤로가기로 도형 선택 팝업 닫기
   useEffect(() => {
     const h = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', h)

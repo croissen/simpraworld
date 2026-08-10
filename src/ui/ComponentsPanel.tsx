@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useOverlay } from '../overlays'
 import {
   addComponentDoc,
   exportAllComponentsDoc,
@@ -26,6 +27,7 @@ export default function ComponentsPanel({
 }: {
   onRequestDelete: (c: ComponentDef) => void
 }) {
+  useOverlay(true, toggleComponents) // 뒤로가기로 패널 닫기
   const comps = getComponents()
   const selId = getSelectedComponentId()
   const sel = comps.find((c) => c.id === selId)

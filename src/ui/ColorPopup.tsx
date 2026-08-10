@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import styled from 'styled-components'
+import { useOverlay } from '../overlays'
 
 // 상세 색 선택 팝업: 채도/명도(SV) 2D + 색상(Hue) 슬라이더 + HEX 입력 + 스포이드.
 // 값이 바뀔 때마다 onChange(hex)로 즉시 반영.
@@ -63,6 +64,7 @@ export default function ColorPopup({
   onChange: (hex: string) => void
   onClose: () => void
 }) {
+  useOverlay(true, onClose) // 뒤로가기로 색상 팝업 닫기
   const init = hexToRgb(value) || [255, 77, 109]
   const [hsv, setHsv] = useState<[number, number, number]>(() => rgbToHsv(...init))
   const [hexText, setHexText] = useState(value.toUpperCase())

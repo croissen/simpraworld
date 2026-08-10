@@ -136,6 +136,8 @@ export const Badge = styled.span<{ $exposed?: boolean }>`
 // Use/Hide 토글 버튼. $hide=현재 노출됨 → 빨강 'Hide'(숨기기). 아니면 초록 'Use'(꺼내기).
 export const UseBtn = styled.button<{ $hide?: boolean }>`
   flex: none;
+  min-width: 46px; /* Hide/Use 글자 수 달라도 버튼 크기 동일하게 고정 */
+  text-align: center;
   background: ${(p) => (p.$hide ? '#3a1720' : '#10311f')};
   border: 1px solid ${(p) => (p.$hide ? '#8a3a48' : '#3ddc7f')};
   color: ${(p) => (p.$hide ? '#ff9aa8' : '#7cffb0')};

@@ -45,14 +45,17 @@ import {
   groupOBB,
   groupScaleSnapshot,
   isSpined,
-  rigidUnit,
+  groupFigurePids,
   rotatePidsLive,
   scaleGroupApply,
   selectSingle,
   selectedGroupId,
+  selectedGroupIsUnique,
   setDrawTool,
   setSpineChildAnchor,
   spineDescendants,
+  spineGroup,
+  spineRoot,
   spineJointWorld,
   edgesInCurrentSpace,
   enterFolder,
@@ -455,6 +458,59 @@ export default function InfiniteCanvas() {
       const selN = getSelectionSet().size // 2개 이상이면 선택 개체 가운데 초록 체크
       // 그룹 선택이면: 개별 링·체크 대신 하나의 박스로(=한 객체처럼).
       const grouped = selectionGrouped()
+      // 다중선택에 낀 '유니크 그룹'은 멤버마다 체크 말고, 그룹당 보라 체크 1개(bbox 중앙)만.
+      // (일반 groupId 없이 uniqueGroupId만 있는 배치가 유니크 그룹 멤버)
+      // 다중선택에서 '한 객체'로 체크 하나만 낼 단위 키(유니크 그룹=u:, 스플라인 트리=s:). 없으면 undefined.
+      const ugMember = (pid: string): string | undefined => {
+        const pl = getPlacement(pid)
+        if (!pl || pl.groupId || !isSelected(pid)) return undefined
+        if (pl.uniqueGroupId) return 'u:' + pl.uniqueGroupId
+        if (isSpined(pid) || spineDescendants(pid).length > 0) return 's:' + spineRoot(pid)
+        return undefined
+      }
+      const drawnUg = new Set<string>()
+      const ugCenter = new Map<string, { x: number; y: number }>()
+      // 다중선택 맥락(그룹 아님 + 2개↑ 또는 멀티모드)에서만 유니크그룹/스플라인을 '체크 하나'로 합친다.
+      // 단일 선택이면 개별 링을 그대로 살려야 하므로 여기 안 걸리게 한다.
+      const inMulti = !grouped && (selN > 1 || multiMode)
+      if (inMulti) {
+        const bb = new Map<string, { x0: number; y0: number; x1: number; y1: number }>()
+        for (const it of items) {
+          const ug = ugMember(it.pid)
+          if (!ug) continue
+          const r = bb.get(ug) ?? { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }
+          r.x0 = Math.min(r.x0, it.x - it.w / 2)
+          r.y0 = Math.min(r.y0, it.y - it.h / 2)
+          r.x1 = Math.max(r.x1, it.x + it.w / 2)
+          r.y1 = Math.max(r.y1, it.y + it.h / 2)
+          bb.set(ug, r)
+        }
+        for (const [ug, r] of bb) {
+          if (ug.startsWith('s:')) {
+            // 스플라인은 몸통(루트)에만 체크 하나 — bbox 중앙이 아니라 루트 위치에.
+            const rootId = ug.slice(2)
+            const rit = items.find((i) => i.pid === rootId)
+            ugCenter.set(ug, rit ? w2s(rit.x, rit.y) : w2s((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2))
+          } else {
+            ugCenter.set(ug, w2s((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2))
+          }
+        }
+      }
+      const drawCheck = (cx: number, cy: number, color: string, rr: number) => {
+        ctx.fillStyle = color
+        ctx.beginPath()
+        ctx.arc(cx, cy, rr, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.strokeStyle = '#fff'
+        ctx.lineWidth = Math.max(1.6, rr * 0.18)
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+        ctx.beginPath()
+        ctx.moveTo(cx - rr * 0.45, cy + rr * 0.04)
+        ctx.lineTo(cx - rr * 0.1, cy + rr * 0.4)
+        ctx.lineTo(cx + rr * 0.5, cy - rr * 0.35)
+        ctx.stroke()
+      }
       // 노드 — 보이는 것만 (뷰포트 컬링). 각 노드를 그리기 직전에 그 노드가 위쪽 끝점인 엣지를 깐다.
       const margin = 80
       for (let zi = 0; zi < items.length; zi++) {
@@ -477,9 +533,10 @@ export default function InfiniteCanvas() {
         if (p.x + hw < -margin || p.x - hw > W + margin || p.y + hh < -margin || p.y - hh > H + margin)
           continue
         // 선택: 공유 노드면 보라, 아니면 노랑. 비선택이지만 선택된 공유노드의 형제면 보라 점선(표시만).
-        // 그룹 선택이면 개별 링을 안 그림(밑에서 하나의 박스로).
+        // 그룹 선택 or 유니크 그룹 멤버면 개별 링을 안 그림(그룹 박스/보라 체크 하나로 대체).
+        const itUg = inMulti ? ugMember(it.pid) : undefined
         const ring: Ring =
-          grouped && isSelected(it.pid)
+          (grouped && isSelected(it.pid)) || itUg
             ? null
             : isSelected(it.pid)
               ? isShared(it.nodeId)
@@ -489,22 +546,18 @@ export default function InfiniteCanvas() {
                 ? 'sibling'
                 : null
         drawNode(it, p.x, p.y, hw, hh, c.zoom, ring)
-        // 다중선택 표시: 선택 개체 가운데 초록 체크. 그룹은 제외(하나의 객체처럼).
-        if (!grouped && (selN > 1 || multiMode) && isSelected(it.pid)) {
-          const r = Math.max(8, Math.min(hw, hh, 14))
-          ctx.fillStyle = '#34c98a'
-          ctx.beginPath()
-          ctx.arc(p.x, p.y, r, 0, Math.PI * 2)
-          ctx.fill()
-          ctx.strokeStyle = '#fff'
-          ctx.lineWidth = Math.max(1.6, r * 0.18)
-          ctx.lineCap = 'round'
-          ctx.lineJoin = 'round'
-          ctx.beginPath()
-          ctx.moveTo(p.x - r * 0.45, p.y + r * 0.04)
-          ctx.lineTo(p.x - r * 0.1, p.y + r * 0.4)
-          ctx.lineTo(p.x + r * 0.5, p.y - r * 0.35)
-          ctx.stroke()
+        // 다중선택 표시: 선택 개체 가운데 체크. 그룹 전체 선택은 제외(박스로).
+        // 유니크 그룹 멤버는 그룹당 보라 체크 1개(중앙)만, 나머지는 개체마다 초록 체크.
+        if (inMulti && isSelected(it.pid)) {
+          if (itUg) {
+            if (!drawnUg.has(itUg)) {
+              drawnUg.add(itUg)
+              const ct = ugCenter.get(itUg) ?? { x: p.x, y: p.y }
+              drawCheck(ct.x, ct.y, itUg.startsWith('u:') ? '#a855f7' : '#34c98a', 13) // 유니크=보라, 스플라인=초록
+            }
+          } else {
+            drawCheck(p.x, p.y, '#34c98a', Math.max(8, Math.min(hw, hh, 14)))
+          }
         }
         // 드래그로 들어갈 폴더 강조
         if (it.nodeId === armedFolderId) {
@@ -771,12 +824,14 @@ export default function InfiniteCanvas() {
       }
 
       // 그룹 선택: OBB(회전 따라 도는 안정 박스) + 코너(크기조절) + 회전/관절
+      // 유니크 그룹(한 객체로 통합)은 보라색, 일반 그룹은 초록.
+      const grpCol = selectedGroupIsUnique() ? '#a855f7' : '#3ddc7f'
       const gh = grouped ? groupHandles() : null
       if (gh) {
         ctx.save()
         ctx.translate(gh.sc.x, gh.sc.y)
         ctx.rotate(gh.rad)
-        ctx.strokeStyle = '#3ddc7f'
+        ctx.strokeStyle = grpCol
         ctx.lineWidth = 2
         ctx.setLineDash([])
         roundRectPath(-(gh.shw + gh.pad), -(gh.shh + gh.pad), (gh.shw + gh.pad) * 2, (gh.shh + gh.pad) * 2, 10)
@@ -784,7 +839,7 @@ export default function InfiniteCanvas() {
         ctx.restore()
         // 코너 핸들(크기조절)
         ctx.fillStyle = '#fff'
-        ctx.strokeStyle = '#3ddc7f'
+        ctx.strokeStyle = grpCol
         ctx.lineWidth = 1.5
         for (const co of gh.corners) {
           ctx.beginPath()
@@ -792,39 +847,24 @@ export default function InfiniteCanvas() {
           ctx.fill()
           ctx.stroke()
         }
-        const gAny = [...getSelectionSet()][0]
-        if (gAny && isSpined(gAny)) {
-          // 척추화된 그룹: 관절점 표시(드래그로 관절 회전)
-          const j = spineJointWorld(gAny)
-          if (j) {
-            const js = w2s(j.x, j.y)
-            ctx.strokeStyle = '#e3b341'
-            ctx.fillStyle = '#1a1300'
-            ctx.lineWidth = 2
-            ctx.beginPath()
-            ctx.arc(js.x, js.y, 5, 0, Math.PI * 2)
-            ctx.fill()
-            ctx.stroke()
-          }
-        } else {
-          // 회전 핸들
-          ctx.strokeStyle = '#3ddc7f'
-          ctx.lineWidth = 1.5
-          ctx.beginPath()
-          ctx.moveTo(gh.rotStem.x, gh.rotStem.y)
-          ctx.lineTo(gh.rotHandle.x, gh.rotHandle.y)
-          ctx.stroke()
-          ctx.beginPath()
-          ctx.arc(gh.rotHandle.x, gh.rotHandle.y, 9, 0, Math.PI * 2)
-          ctx.fillStyle = '#fff'
-          ctx.fill()
-          ctx.stroke()
-          ctx.fillStyle = '#1a7f4b'
-          ctx.font = '12px system-ui, sans-serif'
-          ctx.textAlign = 'center'
-          ctx.textBaseline = 'middle'
-          ctx.fillText('↻', gh.rotHandle.x, gh.rotHandle.y + 0.5)
-        }
+        // 그룹 회전 핸들: 그룹은 '전체 그림'을 그룹중심으로 회전 → 스파인 멤버가 껴 있어도 항상 표시.
+        // (관절 굽히기는 멤버를 더블클릭해 단독 선택한 뒤)
+        ctx.strokeStyle = grpCol
+        ctx.lineWidth = 1.5
+        ctx.beginPath()
+        ctx.moveTo(gh.rotStem.x, gh.rotStem.y)
+        ctx.lineTo(gh.rotHandle.x, gh.rotHandle.y)
+        ctx.stroke()
+        ctx.beginPath()
+        ctx.arc(gh.rotHandle.x, gh.rotHandle.y, 9, 0, Math.PI * 2)
+        ctx.fillStyle = '#fff'
+        ctx.fill()
+        ctx.stroke()
+        ctx.fillStyle = '#1a7f4b'
+        ctx.font = '12px system-ui, sans-serif'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText('↻', gh.rotHandle.x, gh.rotHandle.y + 0.5)
       }
 
       // 단일 선택 노드: 코너 리사이즈 핸들 (크기는 우측 인스펙터에 표시되므로 캔버스 라벨은 생략)
@@ -1528,11 +1568,12 @@ export default function InfiniteCanvas() {
       const gh = groupHandles()
       if (!gh) return null
       const anyPid = [...getSelectionSet()][0]
-      if (anyPid && isSpined(anyPid)) return null // 척추화된 그룹은 드래그로 관절 회전
+      // 그룹(유니크/일반)은 항상 회전핸들로 '그룹 중심' 회전 — 스파인 멤버가 껴 있어도 관절회전 아님.
+      // (관절을 돌리려면 멤버를 더블클릭해 단독 선택한 뒤 잡는다.)
       if (Math.hypot(px - gh.rotHandle.x, py - gh.rotHandle.y) > 12) return null
       return {
         pid: anyPid,
-        pids: rigidUnit(anyPid),
+        pids: groupFigurePids(gh.gid), // 몸통 포함 연결된 그림 전체가 그룹중심으로 회전
         gid: gh.gid,
         pivotX: gh.obb.cx,
         pivotY: gh.obb.cy,
@@ -1904,7 +1945,7 @@ export default function InfiniteCanvas() {
           mode = 'jointrotate'
           jointOp = {
             pid: rHandle.pid,
-            pids: rigidUnit(rHandle.pid),
+            pids: [rHandle.pid, ...spineDescendants(rHandle.pid)], // 관절 회전은 척추 하위만(그룹메이트 제외)
             pivotX: piv.x,
             pivotY: piv.y,
             pivSX: ps.x,
@@ -1975,7 +2016,7 @@ export default function InfiniteCanvas() {
           !e.shiftKey &&
           lastDownId === hit.pid &&
           nowD - lastDownTime < 350 &&
-          !!getPlacement(hit.pid)?.groupId &&
+          !!(getPlacement(hit.pid)?.groupId || getPlacement(hit.pid)?.uniqueGroupId) &&
           isSelected(hit.pid)
         lastDownId = hit.pid
         lastDownTime = nowD
@@ -1985,23 +2026,26 @@ export default function InfiniteCanvas() {
           dragItem = null
           return
         }
-        // 이미 선택된 척추화 개체를 잡고 끌면 = 관절 축으로 회전(포즈). 하위도 함께.
-        if (isSpined(hit.pid) && isSelected(hit.pid) && !e.shiftKey) {
+        // 단독 선택된 척추화 개체를 잡고 끌면 = 관절 축으로 회전(포즈). 그 개체+척추 하위만.
+        // 그룹(유니크/일반)이 통째로 선택된 상태에선 발동 안 함 → 그룹은 통째 조작
+        //   (몸통 드래그=전체 이동, 코너=크기, 회전핸들=그룹중심 회전).
+        //   관절을 돌리려면 그룹 멤버를 '더블클릭'해 단독 선택한 뒤 잡는다.
+        if (isSpined(hit.pid) && isSelected(hit.pid) && !e.shiftKey && !selectionGrouped()) {
           const joint = spineJointWorld(hit.pid)
           if (joint) {
             const js = w2s(joint.x, joint.y)
             mode = 'jointrotate'
             jointOp = {
               pid: hit.pid,
-              pids: rigidUnit(hit.pid), // 그룹이면 그룹 전체가 관절 축으로 함께 회전
-              gid: getPlacement(hit.pid)?.groupId,
+              pids: [hit.pid, ...spineDescendants(hit.pid)], // 척추 하위만(그룹메이트 제외)
+              gid: undefined,
               pivotX: joint.x,
               pivotY: joint.y,
               pivSX: js.x,
               pivSY: js.y,
               lastAng: (Math.atan2(p.y - js.y, p.x - js.x) * 180) / Math.PI,
-              raw: getGroupRot(getPlacement(hit.pid)?.groupId || ''),
-              applied: getGroupRot(getPlacement(hit.pid)?.groupId || ''),
+              raw: 0,
+              applied: 0,
             }
             dragItem = null
             return
@@ -2269,8 +2313,10 @@ export default function InfiniteCanvas() {
         if (!dragGroup) {
           const set = new Set(getSelectionSet())
           set.add(dragItem.pid)
-          // 척추 하위(자식·손자…)도 함께 이동 → 부모 움직이면 자식 따라감
-          for (const pid of [...set]) for (const d of spineDescendants(pid)) set.add(d)
+          // 스플라인으로 연결된 조립체 전체(몸통=루트 + 전 하위)를 함께 이동 →
+          // 그룹·다중선택 안에 관절 일부만 껴 있어도 몸통·팔다리가 안 흩어지고 통째로 따라간다.
+          // (관절 '회전'(굽히기)은 rigidUnit 경로로 처리 → 여기 영향 없음: 회전은 여전히 자유)
+          for (const pid of [...set]) for (const g of spineGroup(pid)) set.add(g)
           dragGroup = [...set]
             .map((pid) => {
               const pl = getPlacement(pid)

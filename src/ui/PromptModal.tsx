@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useOverlay } from '../overlays'
 import * as S from './ConfirmModal.styles'
 
 // 텍스트 입력 모달. Enter=확인, Esc=취소. (컴포넌트 이름 입력 등)
@@ -17,6 +18,7 @@ export default function PromptModal({
   onCancel: () => void
 }) {
   const [v, setV] = useState(initial)
+  useOverlay(true, onCancel) // 뒤로가기 = 취소
   return createPortal(
     <S.Overlay onClick={onCancel}>
       <S.Box onClick={(e) => e.stopPropagation()}>

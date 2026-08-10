@@ -34,6 +34,7 @@ import { makeStabilizer } from '../oneEuro'
 import { toBlob } from 'html-to-image'
 import { Capacitor } from '@capacitor/core'
 import { saveImageToGallery, shareFileNative } from '../nativeShare'
+import { useOverlay } from '../overlays'
 import { fileToImage, pickImageFile } from '../image'
 import { useIsMobile, useIsTouch } from '../useIsMobile'
 import ConfirmModal from './ConfirmModal'
@@ -167,6 +168,9 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
   const native = Capacitor.isNativePlatform() // 앱(안드/iOS)이면 갤러리 저장·공유 시트 사용
   const [shareFull, setShareFull] = useState(false) // 공유: 여백까지 전체(true) vs 기본 노트영역(false)
   const capDims = useRef({ vpW: 0, vpH: 0, contentH: 0 }) // 캡처 기준 치수(캡처 직전 측정)
+  // 노트 내부 팝업들: 뒤로가기로 노트가 닫히기 전에 이것들부터 닫힘
+  useOverlay(shareOpen, () => setShareOpen(false))
+  useOverlay(viewPhoto, () => setViewPhoto(false))
   // 모바일 포커스 모드: 'content'=내용만, 'tags'=해시태그만, 'none'=전체(제목/검색/보기)
   const [focusMode, setFocusMode] = useState<'none' | 'content' | 'tags'>('none')
   // 소프트 키보드 높이(px). Tab 버튼을 키보드 바로 위에 고정하는 데 사용(0=키보드 닫힘).

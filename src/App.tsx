@@ -52,6 +52,7 @@ import {
   undo,
 } from './store'
 import { initCurrentFile, saveUniverse } from './currentFile'
+import { closeTopOverlay } from './overlays'
 import { ensureEmojiFont } from './canvas/emoji'
 import TextEditor from './ui/TextEditor'
 import { fileToImage } from './image'
@@ -204,7 +205,7 @@ export default function App() {
   }, [])
 
   // ── 뒤로가기(안드로이드 하드웨어 백 / 웹 브라우저 뒤로가기) ──────────────
-  // 우선순위: 열린 확인모달 취소 → 노트 닫기 → 상위 폴더로 → (최상위면) 종료 확인.
+  // 우선순위: 열린 팝업/모달 닫기 → 노트 닫기 → 상위 폴더로 → (최상위면) 종료 확인.
   const doExit = () => {
     setExitAsk(false)
     if (Capacitor.isNativePlatform()) CapApp.exitApp()
@@ -213,13 +214,11 @@ export default function App() {
   // 리스너가 항상 최신 상태를 보도록 ref에 매 렌더 최신 핸들러를 담아둔다.
   const backRef = useRef<() => void>(() => {})
   backRef.current = () => {
-    if (exitAsk) return setExitAsk(false)
-    if (delCount !== null) return setDelCount(null)
-    if (delComp) return setDelComp(null)
-    if (compName !== null) return setCompName(null)
+    // 어떤 팝업/모달/시트/패널이든 떠 있으면 최상단부터 닫는다(최상위 폴더여도 Exit 안 뜸).
+    if (closeTopOverlay()) return
     if (getNoteEditorId() != null) return closeNote() // 노트 열림 → 닫기(안 나감)
     if (goUpOne()) return // 하위 폴더 → 상위 폴더로
-    setExitAsk(true) // 최상위 → "Exit?" 확인
+    setExitAsk(true) // 최상위 → "Exit?" 확인(이 모달도 오버레이라 다음 백은 취소)
   }
   // 네이티브(안드): 하드웨어 백 가로채기. 리스너가 있으면 기본 종료가 안 됨 → 우리가 제어.
   useEffect(() => {

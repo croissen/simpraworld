@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useOverlay } from '../overlays'
 import * as S from './ConfirmModal.styles'
 
 // ←/→ = 버튼 선택 이동, Enter = 선택된 것 실행, Esc = 취소. body로 portal 렌더.
@@ -31,6 +32,7 @@ export default function ConfirmModal({
   const last = buttons.length - 1
   const [sel, setSel] = useState(last)
   const refs = useRef<(HTMLButtonElement | null)[]>([])
+  useOverlay(true, onCancel) // 뒤로가기 = 취소(모달 닫기)
 
   useEffect(() => {
     refs.current[sel]?.focus()

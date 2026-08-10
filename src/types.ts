@@ -87,7 +87,9 @@ export interface Placement {
   x: number
   y: number
   locked?: boolean // 위치 잠금: true면 드래그·좌표편집으로 안 움직임
-  groupId?: string // 그룹화: 같은 groupId끼리 하나로 선택·이동됨(대칭). 척추화(spine)와 별개.
+  groupId?: string // (일반)그룹화: 같은 groupId끼리 하나로 선택·이동됨(대칭). 척추화(spine)와 별개.
+  uniqueGroupId?: string // 유니크 그룹: element/photo만 통합돼 라이브러리에 '한 객체'로 표시.
+  //   최초로 loose한 element/photo만 그룹/스플라인할 때 생성. 일반 groupId 안에 중첩 가능.
   spineParent?: string // 척추화: 이 배치가 매달린 부모 배치 id(부모 이동·회전 시 함께 따라감)
   spineJX?: number // 관절점(회전 축) — 부모 로컬 프레임 기준 X(부모 중심 기준, 부모 회전 역보정)
   spineJY?: number // 관절점 — 부모 로컬 프레임 기준 Y
@@ -182,7 +184,7 @@ export interface SimpraWorldDoc {
   strokes?: InkStroke[] // 자유 필기(펜) 획들. 없으면 빈 것으로 취급(구버전 문서 호환).
   assets: Asset[]
   components: ComponentDef[]
-  groups?: Record<string, { rot: number }> // 그룹별 누적 회전각(도) → 선택 박스가 회전 따라 안정적으로 감쌈
+  groups?: Record<string, { rot: number; name?: string }> // 그룹별 누적 회전각(도) + 유니크 그룹 이름(라이브러리 표시)
   bgColor?: string // 캔버스 배경색(없으면 기본 #0f1115)
   showGrid?: boolean // 그리드 표시 여부(없으면 기본 true)
   gridBold?: boolean // 그리드 선명하게(진하게)

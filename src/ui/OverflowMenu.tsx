@@ -5,6 +5,7 @@
 import { useState, type ReactElement, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { leavePenForNav } from '../store'
+import { useOverlay } from '../overlays'
 import { useIsMobile, useIsTouch } from '../useIsMobile'
 import * as S from './Toolbar.styles'
 
@@ -33,6 +34,7 @@ export default function OverflowMenu({
   const touch = useIsTouch() // 터치/앱(마우스 안드로이드=블루스택 포함)
   const popup = narrow || touch // 아코디언 대신 팝업으로 열지 (PC 외 모든 기기)
   const [open, setOpen] = useState(popup ? false : defaultOpen)
+  useOverlay(popup && open, () => setOpen(false)) // 팝업 시트: 뒤로가기로 닫기
 
   const toggle = (
     <S.Button
