@@ -32,6 +32,8 @@ import { uid } from '../types'
 import type { SNode } from '../types'
 import { makeStabilizer } from '../oneEuro'
 import { toBlob } from 'html-to-image'
+import { Capacitor } from '@capacitor/core'
+import { saveImageToGallery, shareFileNative } from '../nativeShare'
 import { fileToImage, pickImageFile } from '../image'
 import { useIsMobile } from '../useIsMobile'
 import ConfirmModal from './ConfirmModal'
@@ -161,7 +163,8 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
   const [viewPhoto, setViewPhoto] = useState(false) // 모바일 사진 크게보기
   const [shareOpen, setShareOpen] = useState(false) // 공유 팝업
   const [capturing, setCapturing] = useState(false) // 캡처 중(버튼 숨김)
-  const [shareMode, setShareMode] = useState<null | 'gallery' | 'clipboard'>(null)
+  const [shareMode, setShareMode] = useState<null | 'gallery' | 'share' | 'clipboard'>(null)
+  const native = Capacitor.isNativePlatform() // 앱(안드/iOS)이면 갤러리 저장·공유 시트 사용
   const [shareFull, setShareFull] = useState(false) // 공유: 여백까지 전체(true) vs 기본 노트영역(false)
   const capDims = useRef({ vpW: 0, vpH: 0, contentH: 0 }) // 캡처 기준 치수(캡처 직전 측정)
   // 모바일 포커스 모드: 'content'=내용만, 'tags'=해시태그만, 'none'=전체(제목/검색/보기)
@@ -1017,16 +1020,19 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
   // 노트 공유 팝업 열기
   const doShare = () => setShareOpen(true)
 
-  // 이미지 다운로드(폴백 공통)
-  const downloadImage = (blob: Blob) => {
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    // 노트명_YYMMDDHHMMSS.png → 매번 다른 이름이라 "다시 다운로드" 안 뜸
+  // 노트명_YYMMDDHHMMSS.png → 매번 다른 이름이라 "다시 다운로드" 안 뜸
+  const imgFilename = () => {
     const d = new Date()
     const p = (v: number) => String(v).padStart(2, '0')
     const ts = `${p(d.getFullYear() % 100)}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
-    a.download = `${(n.name || 'note').trim()}_${ts}.png`
+    return `${(n.name || 'note').trim()}_${ts}.png`
+  }
+  // 이미지 다운로드(웹/PC 폴백). 네이티브는 shareFileNative(공유 시트)로 처리.
+  const downloadImage = (blob: Blob, filename = imgFilename()) => {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
     document.body.appendChild(a)
     a.click()
     a.remove()
@@ -1058,7 +1064,7 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
 
   // 갤러리/클립보드: capturing(버튼 숨김+해시태그 위로) 모드를 켜고, 그 렌더가 "커밋된 뒤"에 캡처
   // 캡처 직전 기준 치수 측정(캔버스=기본 뷰포트, 본문 전체높이). textarea 숨겨지기 전에.
-  const beginShare = (mode: 'gallery' | 'clipboard', full: boolean) => {
+  const beginShare = (mode: 'gallery' | 'share' | 'clipboard', full: boolean) => {
     setShareOpen(false)
     const cv = drawRef.current
     const ta = bodyRef.current
@@ -1071,6 +1077,7 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
   }
   const shareGallery = () => beginShare('gallery', false)
   const shareGalleryFull = () => beginShare('gallery', true)
+  const shareSheet = () => beginShare('share', false)
   const shareClipboard = () => beginShare('clipboard', false)
 
   // capturing 모드 렌더가 적용된 뒤(effect = 커밋 이후) 캡처 → 버튼 숨김/해시태그 이동이 항상 반영됨
@@ -1115,8 +1122,31 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
       setShareMode(null)
       setShareFull(false)
       if (!blob) return
+      const fn = imgFilename()
       if (mode === 'gallery') {
-        downloadImage(blob)
+        // 앱: 갤러리(사진)에 바로 저장. 웹/PC: <a download>.
+        if (native) {
+          try {
+            await saveImageToGallery(blob, fn)
+            alert('갤러리에 저장했어요')
+          } catch (e) {
+            console.warn('gallery save failed', e)
+            alert('갤러리 저장 실패: ' + ((e as Error).message || ''))
+          }
+        } else {
+          downloadImage(blob, fn)
+        }
+      } else if (mode === 'share') {
+        // 앱: 시스템 공유 시트(타 앱 전송). 웹/PC: 공유 시트가 없어 다운로드로.
+        if (native) {
+          try {
+            await shareFileNative(blob, fn)
+          } catch (e) {
+            console.warn('share failed', e)
+          }
+        } else {
+          downloadImage(blob, fn)
+        }
       } else {
         try {
           await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
@@ -1256,13 +1286,26 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
       {shareOpen && (
         <S.SharePop onClick={() => setShareOpen(false)}>
           <S.ShareSheet onClick={(e) => e.stopPropagation()}>
-            <S.ShareItem onClick={shareGallery}>🖼 Save image</S.ShareItem>
-            {/* 'full'은 여백 낙서까지 포함 → 여백 낙서는 모바일 전용이라 PC에선 숨김 */}
-            {isMobile && (
-              <S.ShareItem onClick={shareGalleryFull}>🖼 Save full image (여백 포함)</S.ShareItem>
+            {native ? (
+              <>
+                {/* 앱: 갤러리에 바로 저장 + 시스템 공유(타 앱 전송) 둘 다 제공 */}
+                <S.ShareItem onClick={shareGallery}>🖼 갤러리에 저장</S.ShareItem>
+                {isMobile && (
+                  <S.ShareItem onClick={shareGalleryFull}>🖼 갤러리에 저장 (여백 포함)</S.ShareItem>
+                )}
+                <S.ShareItem onClick={shareSheet}>📤 공유</S.ShareItem>
+              </>
+            ) : (
+              <>
+                <S.ShareItem onClick={shareGallery}>🖼 Save image</S.ShareItem>
+                {/* 'full'은 여백 낙서까지 포함 → 여백 낙서는 모바일 전용이라 PC에선 숨김 */}
+                {isMobile && (
+                  <S.ShareItem onClick={shareGalleryFull}>🖼 Save full image (여백 포함)</S.ShareItem>
+                )}
+                {/* 모바일은 이미지 클립보드 복사가 안 돼서 제외 */}
+                {!isMobile && <S.ShareItem onClick={shareClipboard}>📋 Copy image</S.ShareItem>}
+              </>
             )}
-            {/* 모바일은 이미지 클립보드 복사가 안 돼서 제외 */}
-            {!isMobile && <S.ShareItem onClick={shareClipboard}>📋 Copy image</S.ShareItem>}
             <S.ShareItem onClick={shareText}>📝 Copy text</S.ShareItem>
           </S.ShareSheet>
         </S.SharePop>

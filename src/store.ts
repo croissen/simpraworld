@@ -1023,12 +1023,12 @@ let clipboard: Clip | null = null
 export const hasClipboard = () => !!clipboard
 
 /** 선택 항목들을 상대 위치 유지한 독립 미니문서로 (복사·선택 내보내기 공용). 루트=실제 위치. */
-export function selectionToDoc(): SimpraWorldDoc {
+export function selectionToDoc(pids: Iterable<string> = selection): SimpraWorldDoc {
   const out = emptyDoc()
   const seenNode = new Set<string>()
   const seenAsset = new Set<string>()
   const rootByPid = new Map<string, string>() // 선택된 원본 배치 pid → out에서의 루트 배치 id
-  for (const pid of selection) {
+  for (const pid of pids) {
     const p = getPlacement(pid)
     if (!p) continue
     const sub = nodeToDoc(p.nodeId)
@@ -1341,6 +1341,16 @@ export function enterFolder(nodeId: string) {
 /** 브레드크럼용 경로 */
 export function breadcrumb(): SNode[] {
   return spacePath.map((id) => getNode(id)).filter((n): n is SNode => !!n)
+}
+
+/** 최상위(루트) 공간인가 — 뒤로가기가 더 올라갈 곳이 없는 상태. */
+export const isAtRoot = () => spacePath.length === 0
+
+/** 상위 폴더로 한 칸 이동. 이미 최상위면 아무것도 안 하고 false. (안드로이드 뒤로가기용) */
+export function goUpOne(): boolean {
+  if (spacePath.length === 0) return false
+  goTo(spacePath.length >= 2 ? spacePath[spacePath.length - 2] : null)
+  return true
 }
 
 export function goTo(spaceId: string | null) {
@@ -2265,7 +2275,10 @@ export function suggestComponentName(): string {
 /** 선택(단일 또는 다중)을 컴포넌트(스냅샷)로 저장 → 목록에 추가. 사진·폴더·노트 혼합 가능. */
 export function saveSelectionAsComponent(name?: string): ComponentDef | undefined {
   if (!selection.size) return
-  const cdoc = selectionToDoc() // 다중-루트 미니문서(상대 위치 유지)
+  // 스플라인(척추)으로 묶인 하위 개체도 함께 포함 → 컴포넌트에 '연결된 상태'로 들어감.
+  const pids = new Set(selection)
+  for (const pid of [...pids]) for (const d of spineDescendants(pid)) pids.add(d)
+  const cdoc = selectionToDoc(pids) // 다중-루트 미니문서(상대 위치 + 척추 관절 유지)
   if (!cdoc.nodes.length) return
   const c: ComponentDef = {
     id: uid('c'),

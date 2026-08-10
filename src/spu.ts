@@ -5,6 +5,7 @@ import JSZip from 'jszip'
 import { get, set, del } from 'idb-keyval'
 import { Capacitor } from '@capacitor/core'
 import { FilePicker } from '@capawesome/capacitor-file-picker'
+import { saveFileToDocuments } from './nativeShare'
 import { emptyDoc } from './types'
 import type { SimpraWorldDoc } from './types'
 
@@ -95,7 +96,18 @@ export async function saveSpu(suggestedName: string, makeBlob: () => Promise<Blo
   return `${suggestedName} (다운로드 폴더)`
 }
 
-export function downloadBlob(blob: Blob, filename: string) {
+export async function downloadBlob(blob: Blob, filename: string) {
+  // 네이티브(앱): WebView가 <a download>를 못 함 + .spu는 공유 시트가 불안정 →
+  // 기기 Documents 폴더에 직접 저장하고 위치를 알린다(파일앱에서 찾고 재-Import 가능).
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const where = await saveFileToDocuments(blob, filename)
+      alert(`저장됨: ${where}`)
+    } catch (e) {
+      alert('저장 실패: ' + ((e as Error).message || ''))
+    }
+    return
+  }
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url

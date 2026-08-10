@@ -1,3 +1,6 @@
+import { Capacitor } from '@capacitor/core'
+import { FilePicker } from '@capawesome/capacitor-file-picker'
+
 // 이미지 처리 — 용량을 잡으려고 WebP로 다운스케일(투명도 유지). 원본(풀해상도)은 저장하지 않음.
 //  - 사진 개체: 긴 변 PHOTO_MAX
 //  - 노트/폴더 아이콘: 긴 변 ICON_MAX (작게 = 가벼움)
@@ -51,7 +54,34 @@ export function fileToImage(
   })
 }
 
-export function pickImageFile(): Promise<File | null> {
+function base64ToArrayBuffer(b64: string): ArrayBuffer {
+  const bin = atob(b64)
+  const buf = new ArrayBuffer(bin.length)
+  const view = new Uint8Array(buf)
+  for (let i = 0; i < bin.length; i++) view[i] = bin.charCodeAt(i)
+  return buf
+}
+
+export async function pickImageFile(): Promise<File | null> {
+  // 네이티브 앱(Android/iOS): WebView가 고른 파일 바이트를 FileReader로 못 읽는 문제 회피 →
+  // 네이티브 이미지 피커로 바이트를 직접 받아 인메모리 File로 만든다. (웹/PC는 기존 <input>)
+  if (Capacitor.isNativePlatform()) {
+    let picked
+    try {
+      picked = await FilePicker.pickImages({ readData: true })
+    } catch (e) {
+      const msg = (e as { message?: string }).message ?? ''
+      if (/cancel/i.test(msg)) return null // 사용자 취소
+      throw e
+    }
+    const f = picked.files?.[0]
+    if (!f) return null
+    const name = f.name || 'photo.jpg'
+    const type = f.mimeType || 'image/jpeg'
+    if (f.blob) return new File([f.blob], name, { type })
+    if (f.data) return new File([base64ToArrayBuffer(f.data)], name, { type })
+    return null
+  }
   return new Promise((resolve) => {
     const input = document.createElement('input')
     input.type = 'file'

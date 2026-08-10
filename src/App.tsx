@@ -1,4 +1,6 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { Capacitor } from '@capacitor/core'
+import { App as CapApp } from '@capacitor/app'
 import InfiniteCanvas from './canvas/InfiniteCanvas'
 import Inspector from './ui/Inspector'
 import Toolbar from './ui/Toolbar'
@@ -18,11 +20,13 @@ import type { ComponentDef } from './types'
 import {
   addPhoto,
   addText,
+  closeNote,
   copySelection,
   deleteComponent,
   deleteSelection,
   deleteSelectionHereOnly,
   getCamera,
+  goUpOne,
   getComponents,
   getComponentsOpen,
   getEditingTextPid,
@@ -60,6 +64,7 @@ export default function App() {
   const [delCount, setDelCount] = useState<number | null>(null) // 노드 삭제 확인(선택 N개)
   const [delComp, setDelComp] = useState<ComponentDef | null>(null)
   const [compName, setCompName] = useState<string | null>(null) // 컴포넌트 이름 입력 프롬프트
+  const [exitAsk, setExitAsk] = useState(false) // 최상위에서 뒤로가기 → 종료 확인
   const isMobile = useIsMobile() // 폭(≤640) — 헤더 레이아웃(세로폰=모바일 헤더)용
   // 터치기기(가로폰·태블릿 포함) — 개체 선택 시 4버튼(ObjectActions) vs PC 상세패널(Inspector) 판단용
   const touch = useIsMobile('(hover: none) and (pointer: coarse)')
@@ -198,6 +203,43 @@ export default function App() {
     return () => window.removeEventListener('paste', onPaste)
   }, [])
 
+  // ── 뒤로가기(안드로이드 하드웨어 백 / 웹 브라우저 뒤로가기) ──────────────
+  // 우선순위: 열린 확인모달 취소 → 노트 닫기 → 상위 폴더로 → (최상위면) 종료 확인.
+  const doExit = () => {
+    setExitAsk(false)
+    if (Capacitor.isNativePlatform()) CapApp.exitApp()
+    else window.location.href = '/' // 웹: 랜딩으로 나감
+  }
+  // 리스너가 항상 최신 상태를 보도록 ref에 매 렌더 최신 핸들러를 담아둔다.
+  const backRef = useRef<() => void>(() => {})
+  backRef.current = () => {
+    if (exitAsk) return setExitAsk(false)
+    if (delCount !== null) return setDelCount(null)
+    if (delComp) return setDelComp(null)
+    if (compName !== null) return setCompName(null)
+    if (getNoteEditorId() != null) return closeNote() // 노트 열림 → 닫기(안 나감)
+    if (goUpOne()) return // 하위 폴더 → 상위 폴더로
+    setExitAsk(true) // 최상위 → "Exit?" 확인
+  }
+  // 네이티브(안드): 하드웨어 백 가로채기. 리스너가 있으면 기본 종료가 안 됨 → 우리가 제어.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return
+    let h: { remove: () => void } | undefined
+    CapApp.addListener('backButton', () => backRef.current()).then((x) => (h = x))
+    return () => h?.remove()
+  }, [])
+  // 웹: 브라우저 뒤로가기 트랩(popstate). 센티넬 상태를 밀어 한 번에 페이지를 벗어나지 않게.
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) return
+    window.history.pushState({ __spuBack: true }, '')
+    const onPop = () => {
+      window.history.pushState({ __spuBack: true }, '') // 다시 무장
+      backRef.current()
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
   const selCount = selectionCount()
   const noteId = getNoteEditorId()
   const editTextPid = getEditingTextPid()
@@ -287,6 +329,15 @@ export default function App() {
             setCompName(null)
           }}
           onCancel={() => setCompName(null)}
+        />
+      )}
+      {exitAsk && (
+        <ConfirmModal
+          message="Exit?"
+          confirmLabel="Exit"
+          cancelLabel="Cancel"
+          onConfirm={doExit}
+          onCancel={() => setExitAsk(false)}
         />
       )}
     </S.AppRoot>
