@@ -22,7 +22,7 @@ import {
   toggleLibrary,
   undo,
 } from '../store'
-import { importSmk, pickSmkFile, supportsFileSave } from '../smk'
+import { importSpu, pickSpuFile, supportsFileSave } from '../spu'
 import {
   exportSelectionOrSpace,
   getCurrentFileName,
@@ -154,12 +154,12 @@ export default function Toolbar() {
     addPhoto(img, centerWorld().x, centerWorld().y)
   }
 
-  // import a .smk folder into the current space (auto "(1)" on name clash)
+  // import a .spu folder into the current space (auto "(1)" on name clash)
   async function onImport() {
-    const file = await pickSmkFile()
+    const file = await pickSpuFile()
     if (!file) return
     try {
-      importWorld(await importSmk(file))
+      importWorld(await importSpu(file))
     } catch (e) {
       alert('Import failed: ' + (e as Error).message)
     }
@@ -325,7 +325,7 @@ export default function Toolbar() {
                 ? `⤓ Export (${selectionCount()})`
                 : '⤓ Export'}
           </S.Button>,
-          <S.Button key="import" onClick={onImport} title="Import a .smk into the current space (merge)">
+          <S.Button key="import" onClick={onImport} title="Import a .spu into the current space (merge)">
             ⤒ Import
           </S.Button>,
           <S.Button

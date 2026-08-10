@@ -10,7 +10,7 @@ import {
   toggleComponents,
 } from '../store'
 import type { ComponentDef, SimpraWorldDoc } from '../types'
-import { exportSmk, importSmk, pickSmkFile, saveSmk } from '../smk'
+import { exportSpu, importSpu, pickSpuFile, saveSpu } from '../spu'
 import CommitInput from './CommitInput'
 import * as S from './ComponentsPanel.styles'
 
@@ -32,16 +32,16 @@ export default function ComponentsPanel({
   const [editingId, setEditingId] = useState<string | null>(null)
 
   async function onImport() {
-    const file = await pickSmkFile()
+    const file = await pickSpuFile()
     if (!file) return
     try {
-      const cdoc = await importSmk(file)
+      const cdoc = await importSpu(file)
       if (cdoc.components && cdoc.components.length) {
         // 여러 컴포넌트 번들 → 전부 목록에 추가
         for (const c of cdoc.components) addComponentDoc(c.name, c.doc)
       } else {
-        // 단일 _comp.smk (노드 미니문서) → 1개로 추가
-        const name = rootNode(cdoc)?.name || file.name.replace(/(_comp)?\.(spu|smk)$/i, '')
+        // 단일 _comp.spu (노드 미니문서) → 1개로 추가
+        const name = rootNode(cdoc)?.name || file.name.replace(/(_comp)?\.spu$/i, '')
         addComponentDoc(name, cdoc)
       }
     } catch (e) {
@@ -51,11 +51,11 @@ export default function ComponentsPanel({
 
   async function onExportAll() {
     if (comps.length === 0) return alert('No components to export')
-    await saveSmk('components.spu', () => exportSmk(exportAllComponentsDoc()))
+    await saveSpu('components.spu', () => exportSpu(exportAllComponentsDoc()))
   }
 
   async function onDownload(c: ComponentDef) {
-    await saveSmk(`${c.name.trim()}_comp.spu`, () => exportSmk(c.doc))
+    await saveSpu(`${c.name.trim()}_comp.spu`, () => exportSpu(c.doc))
   }
 
   function meta(c: ComponentDef) {

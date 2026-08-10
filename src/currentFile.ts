@@ -20,15 +20,15 @@ import {
   selectionToDoc,
 } from './store'
 import {
-  exportSmk,
-  saveSmk,
-  importSmk,
+  exportSpu,
+  saveSpu,
+  importSpu,
   downloadBlob,
   supportsFileSave,
   supportsFileOpen,
   pickSaveHandle,
   pickOpenHandle,
-  pickSmkFile,
+  pickSpuFile,
   ensureWritePermission,
   writeHandle,
   persistHandle,
@@ -37,7 +37,7 @@ import {
   persistFileName,
   loadPersistedFileName,
   clearPersistedFileName,
-} from './smk'
+} from './spu'
 
 let handle: FileSystemFileHandle | null = null // PC 전용(모바일은 항상 null)
 let fileName = '' // 현재 파일명('' = 아직 저장된 파일 없음) — PC/모바일 공통
@@ -88,7 +88,7 @@ function suggestedName() {
 }
 
 function makeBlob() {
-  return exportSmk(exportUniverseDoc())
+  return exportSpu(exportUniverseDoc())
 }
 
 /** 앱 시작 시: 이전 세션의 파일 핸들(PC)·파일명(공통) 복원. */
@@ -181,7 +181,7 @@ export async function exportSelectionOrSpace(): Promise<string> {
     out = selectionToDoc()
     filename = n ? `${n.name.trim()}.spu` : `selection-${selectionCount()}.spu`
   }
-  return saveSmk(filename, () => exportSmk(out))
+  return saveSpu(filename, () => exportSpu(out))
 }
 
 /**
@@ -209,16 +209,16 @@ export async function openUniverseFile(): Promise<boolean> {
       const h = await pickOpenHandle()
       if (!h) return false // 취소
       const file = await (h as unknown as { getFile: () => Promise<File> }).getFile()
-      replaceWorld(await importSmk(file))
+      replaceWorld(await importSpu(file))
       handle = h
       setFileName(h.name)
       persistHandle(h).catch(() => {})
       return true
     }
     // 모바일: 파일 핸들은 못 잡지만 연 파일'명'은 기억 → 이후 Save가 같은 이름으로 다운로드
-    const file = await pickSmkFile()
+    const file = await pickSpuFile()
     if (!file) return false
-    replaceWorld(await importSmk(file))
+    replaceWorld(await importSpu(file))
     handle = null
     setFileName(file.name)
     return true

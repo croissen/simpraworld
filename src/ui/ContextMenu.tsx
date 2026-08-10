@@ -25,7 +25,7 @@ import {
 } from '../store'
 import { exportSelectionOrSpace } from '../currentFile'
 import { fileToImage } from '../image'
-import { importSmk, pickSmkFile } from '../smk'
+import { importSpu, pickSpuFile } from '../spu'
 import { useIsMobile } from '../useIsMobile'
 import * as S from './ContextMenu.styles'
 
@@ -61,12 +61,12 @@ export default function ContextMenu({
     }
   }
 
-  // .smk 가져오기 → 현재 공간의 우클릭 자리에 배치
+  // .spu 가져오기 → 현재 공간의 우클릭 자리에 배치
   async function importHere(wx: number, wy: number) {
-    const file = await pickSmkFile()
+    const file = await pickSpuFile()
     if (!file) return
     try {
-      importWorld(await importSmk(file), { x: wx, y: wy })
+      importWorld(await importSpu(file), { x: wx, y: wy })
     } catch (e) {
       alert('Import failed: ' + (e as Error).message)
     }
@@ -116,7 +116,7 @@ export default function ContextMenu({
           </S.Item>
         )}
         {!isMobile && <S.Item onClick={run(() => pasteHere(cm.wx, cm.wy))}>Paste here</S.Item>}
-        <S.Item onClick={run(() => importHere(cm.wx, cm.wy))} title="Import a .smk into this space (here)">
+        <S.Item onClick={run(() => importHere(cm.wx, cm.wy))} title="Import a .spu into this space (here)">
           ⤒ Import
         </S.Item>
 

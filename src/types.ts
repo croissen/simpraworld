@@ -24,8 +24,8 @@ export interface Frame {
 
 /**
  * 컴포넌트 = "재사용할 노드(폴더·메모)를 내용째 저장해둔 복사본".
- * doc = 그 노드 하나(폴더면 하위 전체)를 담은 독립 미니 문서(.smk와 같은 구조).
- * 목록에서 더블클릭 = 현재 공간에 그대로 복제(stamp). 다운로드 = "{name}_comp.smk".
+ * doc = 그 노드 하나(폴더면 하위 전체)를 담은 독립 미니 문서(.spu와 같은 구조).
+ * 목록에서 더블클릭 = 현재 공간에 그대로 복제(stamp). 다운로드 = "{name}_comp.spu".
  */
 export interface ComponentDef {
   id: string
@@ -39,7 +39,7 @@ export interface Asset {
   id: string
   kind: 'image'
   mime: string
-  thumb: string // dataURL (캔버스 렌더 + .smk 저장 대상)
+  thumb: string // dataURL (캔버스 렌더 + .spu 저장 대상)
   original?: string // dataURL (원본, 선택적)
   name?: string
 }

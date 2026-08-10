@@ -63,7 +63,13 @@ export default function OverflowMenu({
             {subheader && <S.SheetSub>{subheader}</S.SheetSub>}
             <S.SheetBody>
               {items.map((el, i) => (
-                <div key={el.key ?? i} onClick={() => setOpen(false)}>
+                <div
+                  key={el.key ?? i}
+                  onClick={() => {
+                    leavePenForNav() // 메뉴 항목 클릭 = 내비/추가 동작 → 핸드모드 아니면 펜 끔
+                    setOpen(false)
+                  }}
+                >
                   {el}
                 </div>
               ))}
@@ -105,6 +111,7 @@ export default function OverflowMenu({
           $n={items.length}
           $align={align}
           tabIndex={open ? undefined : -1}
+          onClick={leavePenForNav} // 항목 클릭(추가/패널/파일) = 핸드모드 아니면 펜 끔 (PC: 트레이가 기본 열림)
         >
           {el}
         </S.TrayItem>

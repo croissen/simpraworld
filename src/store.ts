@@ -2293,9 +2293,9 @@ export function deleteComponent(id: string) {
   changed()
 }
 
-/** 외부에서 들여온(.smk) 미니 문서를 컴포넌트 목록에 추가 */
+/** 외부에서 들여온(.spu) 미니 문서를 컴포넌트 목록에 추가 */
 export function addComponentDoc(name: string, cdoc: SimpraWorldDoc): ComponentDef {
-  migrateEdgesToPlacements(cdoc) // 구버전 컴포넌트 .smk도 placement 기준으로 변환
+  migrateEdgesToPlacements(cdoc) // 구버전 컴포넌트 .spu도 placement 기준으로 변환
   const c: ComponentDef = { id: uid('c'), name, doc: cdoc, updatedAt: Date.now() }
   doc.components.push(c)
   changed()
@@ -2376,7 +2376,7 @@ export function addPhoto(
   return node
 }
 
-/** 폴더 하나(+내부 전체)를 독립 문서로 추출 → .smk 내보내기용. 폴더가 루트가 됨. */
+/** 폴더 하나(+내부 전체)를 독립 문서로 추출 → .spu 내보내기용. 폴더가 루트가 됨. */
 export function exportFolderDoc(folderId: string): SimpraWorldDoc {
   const out = emptyDoc()
   // subtree 공간(폴더 id) 집합
@@ -2512,7 +2512,7 @@ export function newWorld() {
  * Load(다른 파일 열기)용. resetToSample과 같은 방식으로 화면 상태도 초기화한다.
  */
 export function replaceWorld(incoming: SimpraWorldDoc) {
-  migrateEdgesToPlacements(incoming) // 구버전 .smk도 placement 기준으로
+  migrateEdgesToPlacements(incoming) // 구버전 .spu도 placement 기준으로
   doc = { ...emptyDoc(), ...incoming }
   spacePath = []
   selection = new Set()
@@ -2524,10 +2524,10 @@ export function replaceWorld(incoming: SimpraWorldDoc) {
   changed()
 }
 
-/** .smk 폴더를 My Universe(최상위)로 가져오기. 루트 폴더 이름이 겹치면 "이름(1)". */
+/** .spu 폴더를 My Universe(최상위)로 가져오기. 루트 폴더 이름이 겹치면 "이름(1)". */
 export function importWorld(incoming: SimpraWorldDoc, at?: { x: number; y: number }) {
   const space = getCurrentSpace() // 현재 들어와 있는 공간에 가져옴(루트 아님)
-  migrateEdgesToPlacements(incoming) // 구버전(node 기준) .smk도 placement 기준으로 변환 후 가져옴
+  migrateEdgesToPlacements(incoming) // 구버전(node 기준) .spu도 placement 기준으로 변환 후 가져옴
   const idMap = new Map<string, string>()
   const remap = (old: string) => {
     if (!idMap.has(old)) idMap.set(old, uid('i'))

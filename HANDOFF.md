@@ -23,7 +23,7 @@
 
 **SimpraWorld** = 노트앱도 게임도 관리툴도 아닌 **무한 캔버스 샌드박스**. 폴더/파일(노드)이 무한 캔버스 위 좌표에 자유 배치되고, 폴더를 더블클릭하면 그 안으로 들어가 **또 하나의 캔버스 세계**가 펼쳐진다(구글어스 줌인 느낌). 피그마처럼 노드를 **컴포넌트(템플릿+필드)화** 할 수 있어 쓰는 사람에 따라 용도가 갈린다(재고관리/인맥CRM/피파 스쿼드/조직도 등). 마인크래프트처럼 자유, 컬러노트처럼 심플. 원본 기획서: `C:\Users\i\Desktop\캡\두번째프로젝트.txt`.
 
-**브랜드/앱 이름 = SimpraWorld** (구 이름 Simpranet에서 승격). 공유 파일 확장자 = `.smk`.
+**브랜드/앱 이름 = SimpraWorld** (구 이름 Simpranet에서 승격). 공유 파일 확장자 = `.spu`.
 
 ---
 
@@ -48,7 +48,7 @@
   - 렌더는 DOM이 아니라 **Canvas 2D**다 (iOS 100% 호환 + 성능). 캔버스 위 노드는 React 컴포넌트가 아니라 ctx로 직접 그린다.
 - 나중에 이 코어를 그대로 감싼다:
   - **PC** → **Tauri** (.exe 설치형, 진짜 파일시스템)
-  - **모바일(안드/아이폰)** → **Capacitor** (.apk/.ipa, 진짜 로컬저장·.smk 파일연결)
+  - **모바일(안드/아이폰)** → **Capacitor** (.apk/.ipa, 진짜 로컬저장·.spu 파일연결)
   - **웹** → 그대로 배포 (`app.simpraworld.com` 서브도메인 예정)
 - **RN 아님.** 캔버스 엔진이 심장이라 웹 기술이 압도적으로 유리해서 일부러 웹으로 간다.
 - 배포: 기존 포트폴리오(`thinking/portfolio/simpraworld`, Cloudflare 배포 중)와 **별도 코드/별도 배포**. 도메인에서만 링크로 연결. **합치지 마라.**
@@ -62,7 +62,7 @@
   1. `user_id` 자리를 null로 비워둠 → 나중에 로그인 붙이면 채우기만.
   2. **구조(JSON)와 사진(asset) 분리** → 나중에 "구조 무료동기화 / 사진 과금" 스위치 가능.
   3. 모든 노드에 `id` + `updatedAt` → 나중에 동기화(뭐 바뀌었나 비교) 가능.
-- **`.smk` = ZIP(`data.json` + `images/`)**. 불러올 때 **id 전부 remap**(충돌 방지), 좌표는 상대좌표 기준이라 원하는 위치에 삽입 가능.
+- **`.spu` = ZIP(`data.json` + `images/`)**. 불러올 때 **id 전부 remap**(충돌 방지), 좌표는 상대좌표 기준이라 원하는 위치에 삽입 가능.
 
 ---
 
@@ -84,7 +84,7 @@ simpraworld/
     types.ts                  ← 데이터 모델(SNode/SEdge/Template/Asset/SimpraWorldDoc) + uid()
     store.ts                  ← ★상태 + 모든 mutation + IndexedDB 영속화. 앱의 두뇌.
     sampleWorld.ts            ← 온보딩 예시 세계(우리집/친구들/냉장고…)
-    smk.ts                    ← .smk 내보내기/불러오기(JSZip) + 다운로드/파일선택 헬퍼
+    spu.ts                    ← .spu 내보내기/불러오기(JSZip) + 다운로드/파일선택 헬퍼
     image.ts                  ← 사진 → 512px 썸네일(thumb) + 원본(original) 분리
     canvas/
       InfiniteCanvas.tsx      ← ★캔버스 렌더 루프 + pan/zoom/pinch + 히트테스트 + 드래그
@@ -116,17 +116,17 @@ simpraworld/
 
 ## 7. 지금까지 구현된 것 (v0.1, 동작 확인됨)
 
-무한 캔버스(pan/zoom/휠/핀치, Pointer 이벤트로 터치 통합) · 폴더 더블클릭 진입 + 브레드크럼(스택) · 노드 생성/드래그/선택/삭제 · 도형 + 색 · 사진 업로드(512 썸네일) · **노트 더블클릭=본문 팝업 편집(NoteEditor)** · **컴포넌트(재사용 노드 스냅샷)** · **다중선택(shift클릭/Ctrl+A/마퀴) + 일괄 이동·복사·삭제** · **Ctrl+C/V(독립복제) · 우클릭 Unique copy(결속복제)** · **엣지=Ctrl+Alt 줄잇기** · IndexedDB 자동저장 · **.smk 폴더단위 내보내기/가져오기**.
+무한 캔버스(pan/zoom/휠/핀치, Pointer 이벤트로 터치 통합) · 폴더 더블클릭 진입 + 브레드크럼(스택) · 노드 생성/드래그/선택/삭제 · 도형 + 색 · 사진 업로드(512 썸네일) · **노트 더블클릭=본문 팝업 편집(NoteEditor)** · **컴포넌트(재사용 노드 스냅샷)** · **다중선택(shift클릭/Ctrl+A/마퀴) + 일괄 이동·복사·삭제** · **Ctrl+C/V(독립복제) · 우클릭 Unique copy(결속복제)** · **엣지=Ctrl+Alt 줄잇기** · IndexedDB 자동저장 · **.spu 폴더단위 내보내기/가져오기**.
 
 **입력 모델(2026-06-18 대개편):** 좌드래그 빈곳=**영역선택(마퀴, 걸치면 선택)**, **Space/휠버튼 드래그=팬**, 휠=줌. **shift+클릭=다중토글, Ctrl+A=현재공간 전체**. 선택은 store에서 **Set**(`selection`). 다중선택 시 우측은 `MultiInspector`(Position 그룹이동/Copy/Delete만). 드래그/방향키=선택 일괄 이동. **Ctrl+C=독립복제 / 우클릭 Unique copy=결속복제(같은 노드 공유→편집·삭제 전파) / Paste here=커서위치, Ctrl+V=계단오프셋**. 클립보드는 `{mode:'copy'|'unique'}`. **Ctrl+Alt+클릭/드래그=줄잇기**(소스=단일선택, 클릭=토글/박스=다수, `toggleEdge`/`linkNodes`). 우클릭 컨텍스트메뉴=`ui/ContextMenu`.
 
 **노트/메모(NoteEditor):** memo 노드 더블클릭 → 팝업(`ui/NoteEditor`)에서 제목+본문(`SNode.body`) 편집. **X버튼/Esc로만 닫힘**(바깥 클릭·텍스트선택 중 바깥 release로 안 닫힘 — 사용자 요구). 배경은 적당한 오프화이트 종이(#f3f1ea, 순백 금지). store UI상태 `noteEditorNodeId`+`openNote/closeNote`, App이 렌더.
 
-**컴포넌트 = "재사용할 노드(폴더·메모)를 내용째 저장한 스냅샷"** (⚠️ 옛 '템플릿+필드 스키마' 방식은 사용자가 "필드 추가가 아니다"라며 거부 → **2026-06-17 전부 제거**. `Template/FieldDef/templateId/fields` 삭제됨. 다시 만들지 마.). `ComponentDef{id,name,doc,updatedAt}` where doc=그 노드의 독립 미니문서(폴더면 `exportFolderDoc`로 하위 전체, 메모면 단일노드). store `doc.components[]`. **인스펙터 Name 줄 우측 `+ Component` 버튼**(누르면 연초록 'Complete' 1.1s 후 복귀)=현재 노드 저장(`saveNodeAsComponent`). Toolbar **Components** 버튼=좌측 패널(`ui/ComponentsPanel`): 항목 **클릭=미리보기 카드**, **더블클릭=현재 공간에 복제 생성**(`stampComponent`→`placeDoc`, id remap, 계단식 오프셋), 항목별 **⤓ 다운로드=`{name}_comp.smk`**(smk 재사용), 헤더 **⤒ Import**=`_comp.smk`를 목록에 추가(`addComponentDoc`).
+**컴포넌트 = "재사용할 노드(폴더·메모)를 내용째 저장한 스냅샷"** (⚠️ 옛 '템플릿+필드 스키마' 방식은 사용자가 "필드 추가가 아니다"라며 거부 → **2026-06-17 전부 제거**. `Template/FieldDef/templateId/fields` 삭제됨. 다시 만들지 마.). `ComponentDef{id,name,doc,updatedAt}` where doc=그 노드의 독립 미니문서(폴더면 `exportFolderDoc`로 하위 전체, 메모면 단일노드). store `doc.components[]`. **인스펙터 Name 줄 우측 `+ Component` 버튼**(누르면 연초록 'Complete' 1.1s 후 복귀)=현재 노드 저장(`saveNodeAsComponent`). Toolbar **Components** 버튼=좌측 패널(`ui/ComponentsPanel`): 항목 **클릭=미리보기 카드**, **더블클릭=현재 공간에 복제 생성**(`stampComponent`→`placeDoc`, id remap, 계단식 오프셋), 항목별 **⤓ 다운로드=`{name}_comp.spu`**(spu 재사용), 헤더 **⤒ Import**=`_comp.spu`를 목록에 추가(`addComponentDoc`).
 
 **구조(중요):** 최상위 = **My Universe**(space=null) → 기본 폴더 **SimpraWorld**(earth.png 이미지, 0,0, 100×100, =첫 "세계") → 그 안에 샘플(우리집/친구들…). 브레드크럼 루트 "🌌 My Universe". DB키 `simpraworld:doc:v7`. earth 이미지는 `src/earthImage.ts`(base64). 탑뷰/평면뷰(view/background) 제거됨. **UI 전부 영어**(글로벌): 인스펙터 Name(+우측 `+ Component` 버튼)/Position(X·Y)/Dimensions(W·H+🔓, 피그마식)/Shape/Color/Image, Toolbar +Folder/+Note/Components/Export/Import, 샘플도 영어(기본 노드명 New folder/New note). 코드 주석만 한글. ⚠️ **store.ts 저장 시 Vite 전체 리로드** → DB키 올린 직후 미완성 샘플로 새 키가 생성·오염되는 함정 반복. DB키/샘플 변경은 **서버 정지→코드 완성→빌드→재시작** 순서(또는 IndexedDB 키 삭제 후 reload).
 
-**.smk (폴더 단위):** 내보내기 = **선택한 폴더만**(`exportFolderDoc`: 그 폴더가 루트로 재구성, 미선택 시 alert) → `saveSmk`가 "다른 이름으로 저장" 다이얼로그(`showSaveFilePicker`, 파일명+위치; 미지원/모바일은 다운로드+위치 안내). ⚠️ 다이얼로그는 **클릭 직후** 호출돼야 해서 zip 생성(makeBlob)보다 **먼저** 연다(gesture 유지). 가져오기 = `importWorld`로 **My Universe 최상위**에 추가, 루트 폴더명 충돌 시 **"이름(1)"**.
+**.spu (폴더 단위):** 내보내기 = **선택한 폴더만**(`exportFolderDoc`: 그 폴더가 루트로 재구성, 미선택 시 alert) → `saveSpu`가 "다른 이름으로 저장" 다이얼로그(`showSaveFilePicker`, 파일명+위치; 미지원/모바일은 다운로드+위치 안내). ⚠️ 다이얼로그는 **클릭 직후** 호출돼야 해서 zip 생성(makeBlob)보다 **먼저** 연다(gesture 유지). 가져오기 = `importWorld`로 **My Universe 최상위**에 추가, 루트 폴더명 충돌 시 **"이름(1)"**.
 
 **다대다 참조 구조(중요):** node=데이터 원본 1개, **placement=소속+좌표 관계테이블**(한 노드가 여러 placement → 여러 공간 동시 존재). 캔버스엔 `SpaceItem`(placement+node 조인) 넘김. 선택/드래그=placement id, 진입/엣지=node id. 네비=`spacePath` 스택. 인스펙터 "🔗 N곳에 있음"+`여기서만 빼기`(removePlacement)/`완전 삭제`(deleteNode), 순환방지 `isCyclic`/`canNestInto`.
 
@@ -167,12 +167,12 @@ simpraworld/
 
 ## 8. 아직 안 한 것 / 다음 작업 후보 (우선순위 순)
 
-1. **Space/World 개념 반영.** 루트 "내 세계" → **"Space(우주)"** 로, **World(세계)=최상위 폴더**(새 타입 안 만듦, 폴더에 의미만 부여). `.smk` "세계로 추가"(폴더로 감싸 불러오기) + "일부만 추출"(선택 영역만 export) 옵션.
+1. **Space/World 개념 반영.** 루트 "내 세계" → **"Space(우주)"** 로, **World(세계)=최상위 폴더**(새 타입 안 만듦, 폴더에 의미만 부여). `.spu` "세계로 추가"(폴더로 감싸 불러오기) + "일부만 추출"(선택 영역만 export) 옵션.
 2. **애니메이션 "살아있는 세계"** (강력한 차별점 후보). 노드 이동/궤도. **설계 합의됨:** 앵커(placement.x/y=저장 고정좌표) + `anim` 정의 분리 → 렌더 시 `앵커+계산오프셋`으로 합성(**라이브 좌표 저장 안 함=드리프트 방지**), 기본 off, 토글로 실행. 이동 시퀀스(steps: dx/dy/duration, count:1·N·무한, easing) + 궤도(center노드/radius/speed/axis기울기/방향). 애니 켜진 동안만 연속 redraw(아니면 dirty-only 유지).
 3. **킬러 후크 미정.** 첫 출시를 뭘로 띄울지(스쿼드메이커/재고/인맥CRM 등) 아직 안 정함. 사용자와 정해야 함.
 4. CSV/엑셀 내보내기(컴포넌트=시트별 테이블 + 관계 시트). 모델이 이미 테이블형이라 쉬움.
 5. 폴더 복사(참조 vs 깊은복사 구분) · 평면(side)뷰 실제 배경 렌더 · 배경 커스텀(잔디/격자/단색).
-6. 공간인덱스(대량 노드) · 아이콘팩 공유 · 커뮤니티(.smk) · Tauri/Capacitor 래핑.
+6. 공간인덱스(대량 노드) · 아이콘팩 공유 · 커뮤니티(.spu) · Tauri/Capacitor 래핑.
 7. (사소·나중) **여러 탭 동시 사용 시 IndexedDB 저장 덮어쓰기** — 크로스탭 동기화 필요. 단일 탭은 문제없음.
 
 ---

@@ -1,8 +1,10 @@
-// .smk = SimpraWorld MaKe = ZIP( data.json + images/ )
+// .spu = SimpraWorld Universe = ZIP( data.json + images/ )
 // 구조(JSON)와 사진을 분리 저장하므로 그대로 ZIP에 담으면 됨.
 
 import JSZip from 'jszip'
 import { get, set, del } from 'idb-keyval'
+import { Capacitor } from '@capacitor/core'
+import { FilePicker } from '@capawesome/capacitor-file-picker'
 import { emptyDoc } from './types'
 import type { SimpraWorldDoc } from './types'
 
@@ -19,8 +21,8 @@ function extFromMime(mime: string): string {
   return 'jpg'
 }
 
-/** 현재 문서 → .smk Blob */
-export async function exportSmk(doc: SimpraWorldDoc): Promise<Blob> {
+/** 현재 문서 → .spu Blob */
+export async function exportSpu(doc: SimpraWorldDoc): Promise<Blob> {
   const zip = new JSZip()
   const imagesDir = zip.folder('images')!
 
@@ -40,11 +42,11 @@ export async function exportSmk(doc: SimpraWorldDoc): Promise<Blob> {
   return zip.generateAsync({ type: 'blob', mimeType: 'application/octet-stream' })
 }
 
-/** .smk 파일 → 문서 (이미지 다시 dataURL로 복원) */
-export async function importSmk(file: File | Blob): Promise<SimpraWorldDoc> {
+/** .spu 파일 → 문서 (이미지 다시 dataURL로 복원) */
+export async function importSpu(file: File | Blob): Promise<SimpraWorldDoc> {
   const zip = await JSZip.loadAsync(file)
   const jsonFile = zip.file('data.json')
-  if (!jsonFile) throw new Error('data.json 없음 — 올바른 .smk 파일이 아닙니다')
+  if (!jsonFile) throw new Error('data.json 없음 — 올바른 .spu 파일이 아닙니다')
   const doc = JSON.parse(await jsonFile.async('string')) as SimpraWorldDoc
   const base = emptyDoc()
   const merged: SimpraWorldDoc = { ...base, ...doc }
@@ -63,12 +65,12 @@ export async function importSmk(file: File | Blob): Promise<SimpraWorldDoc> {
 }
 
 /**
- * .smk 저장. 지원 브라우저(크롬/엣지 PC)는 "다른 이름으로 저장" 다이얼로그(파일명+위치)를,
+ * .spu 저장. 지원 브라우저(크롬/엣지 PC)는 "다른 이름으로 저장" 다이얼로그(파일명+위치)를,
  * 미지원(사파리/모바일)은 다운로드로 처리. 반환값 = 저장된 위치 설명('' = 취소).
  * 다이얼로그는 클릭 직후 호출돼야 하므로(브라우저 제약) blob 생성보다 "먼저" 연다.
  * makeBlob: 무거운 zip 생성을 다이얼로그 연 뒤로 미루는 팩토리.
  */
-export async function saveSmk(suggestedName: string, makeBlob: () => Promise<Blob>): Promise<string> {
+export async function saveSpu(suggestedName: string, makeBlob: () => Promise<Blob>): Promise<string> {
   const w = window as unknown as { showSaveFilePicker?: (o: unknown) => Promise<any> }
   if (w.showSaveFilePicker) {
     let handle: any = null
@@ -150,7 +152,7 @@ export async function pickOpenHandle(): Promise<FileSystemFileHandle | null> {
   }
   try {
     const [h] = await w.showOpenFilePicker({
-      types: [{ description: 'SimpraWorld file', accept: { 'application/octet-stream': ['.spu', '.smk'] } }],
+      types: [{ description: 'SimpraWorld file', accept: { 'application/octet-stream': ['.spu'] } }],
       multiple: false,
     })
     return h ?? null
@@ -179,11 +181,39 @@ export const persistFileName = (name: string) => set(NAME_KEY, name)
 export const loadPersistedFileName = () => get<string>(NAME_KEY)
 export const clearPersistedFileName = () => del(NAME_KEY)
 
-export function pickSmkFile(): Promise<File | null> {
+function base64ToArrayBuffer(b64: string): ArrayBuffer {
+  const bin = atob(b64)
+  const buf = new ArrayBuffer(bin.length)
+  const view = new Uint8Array(buf)
+  for (let i = 0; i < bin.length; i++) view[i] = bin.charCodeAt(i)
+  return buf
+}
+
+export async function pickSpuFile(): Promise<File | null> {
+  // 네이티브 앱(Android/iOS): WebView가 SAF content:// 파일 바이트를 FileReader/arrayBuffer로
+  // 못 읽어 NotFoundError가 나던 문제 회피 → 네이티브 파일 피커로 바이트를 직접 받아온다.
+  // (웹/PC는 기존 <input type=file> 그대로 — 검증된 경로 유지.) iOS도 같은 코드로 동작.
+  if (Capacitor.isNativePlatform()) {
+    let picked
+    try {
+      picked = await FilePicker.pickFiles({ readData: true })
+    } catch (e) {
+      const msg = (e as { message?: string }).message ?? ''
+      if (/cancel/i.test(msg)) return null // 사용자가 취소
+      throw e
+    }
+    const f = picked.files?.[0]
+    if (!f) return null
+    const name = f.name || 'import.spu'
+    const type = f.mimeType || 'application/octet-stream'
+    if (f.blob) return new File([f.blob], name, { type }) // 웹 구현 경로(방어)
+    if (f.data) return new File([base64ToArrayBuffer(f.data)], name, { type }) // 네이티브: base64 바이트
+    return null
+  }
   return new Promise((resolve) => {
     const input = document.createElement('input')
     input.type = 'file'
-    input.accept = '.spu,.smk,application/zip' // 기존 .smk 백업도 열 수 있게
+    input.accept = '.spu,application/zip'
     input.onchange = () => resolve(input.files?.[0] ?? null)
     input.click()
   })
