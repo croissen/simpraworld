@@ -8,7 +8,7 @@ import Breadcrumb from './ui/Breadcrumb'
 import BrandButton from './ui/BrandButton'
 import MobileHeader from './ui/MobileHeader'
 import ObjectActions from './ui/ObjectActions'
-import { useIsMobile } from './useIsMobile'
+import { useIsMobile, useIsTouch } from './useIsMobile'
 import ViewPanel from './ui/ViewPanel'
 import ConfirmModal from './ui/ConfirmModal'
 import NoteEditor from './ui/NoteEditor'
@@ -67,7 +67,7 @@ export default function App() {
   const [exitAsk, setExitAsk] = useState(false) // 최상위에서 뒤로가기 → 종료 확인
   const isMobile = useIsMobile() // 폭(≤640) — 헤더 레이아웃(세로폰=모바일 헤더)용
   // 터치기기(가로폰·태블릿 포함) — 개체 선택 시 4버튼(ObjectActions) vs PC 상세패널(Inspector) 판단용
-  const touch = useIsMobile('(hover: none) and (pointer: coarse)')
+  const touch = useIsTouch()
 
   useEffect(() => {
     init()

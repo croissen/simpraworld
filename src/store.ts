@@ -338,9 +338,11 @@ export const markSaved = () => {
 }
 /** 마지막 저장/열기 이후 내용 변경이 있었는지. */
 export const isDirty = () => dirty
+/** 캔버스에 지울 만한 내용(노드/컴포넌트/필기)이 있는지. */
+export const hasContent = () =>
+  doc.nodes.length > 0 || doc.components.length > 0 || (doc.strokes?.length ?? 0) > 0
 /** 저장할 가치가 있는 미저장 작업이 있는지(변경됨 + 내용 비어있지 않음). New/Load 전 확인용. */
-export const hasUnsavedWork = () =>
-  dirty && (doc.nodes.length > 0 || doc.components.length > 0 || (doc.strokes?.length ?? 0) > 0)
+export const hasUnsavedWork = () => dirty && hasContent()
 export function setUniverseName(name: string) {
   doc.universeName = name.trim() || 'My Universe'
   changed()
@@ -1578,6 +1580,23 @@ export const isSpined = (pid: string) => !!getPlacement(pid)?.spineParent
 function spineChildren(pid: string): string[] {
   return doc.placements.filter((p) => p.spineParent === pid).map((p) => p.id)
 }
+/** pid가 속한 척추(스플라인) 트리의 최상위 루트까지 올라감 (자기 부모가 없으면 자기 자신). */
+export function spineRoot(pid: string): string {
+  let cur = pid
+  const seen = new Set<string>()
+  while (!seen.has(cur)) {
+    seen.add(cur)
+    const parent = getPlacement(cur)?.spineParent
+    if (!parent) break
+    cur = parent
+  }
+  return cur
+}
+/** pid가 속한 척추 그룹 전체(루트 + 그 아래 전 하위). 어느 노드를 골라도 묶인 전체를 반환. */
+export function spineGroup(pid: string): string[] {
+  const root = spineRoot(pid)
+  return [root, ...spineDescendants(root)]
+}
 /** pid의 모든 척추 하위(재귀, 자기 제외) */
 export function spineDescendants(pid: string): string[] {
   const out: string[] = []
@@ -2275,9 +2294,10 @@ export function suggestComponentName(): string {
 /** 선택(단일 또는 다중)을 컴포넌트(스냅샷)로 저장 → 목록에 추가. 사진·폴더·노트 혼합 가능. */
 export function saveSelectionAsComponent(name?: string): ComponentDef | undefined {
   if (!selection.size) return
-  // 스플라인(척추)으로 묶인 하위 개체도 함께 포함 → 컴포넌트에 '연결된 상태'로 들어감.
+  // 스플라인(척추)으로 묶인 개체는 어느 걸 골라도 그룹 '전체'(루트+전 하위)를 함께 포함
+  // → 컴포넌트에 '연결된 상태'로 들어감. (자식만 골라도 부모·형제까지 딸려옴)
   const pids = new Set(selection)
-  for (const pid of [...pids]) for (const d of spineDescendants(pid)) pids.add(d)
+  for (const pid of [...pids]) for (const g of spineGroup(pid)) pids.add(g)
   const cdoc = selectionToDoc(pids) // 다중-루트 미니문서(상대 위치 + 척추 관절 유지)
   if (!cdoc.nodes.length) return
   const c: ComponentDef = {

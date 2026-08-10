@@ -5,7 +5,7 @@
 import { useState, type ReactElement, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { leavePenForNav } from '../store'
-import { useIsMobile } from '../useIsMobile'
+import { useIsMobile, useIsTouch } from '../useIsMobile'
 import * as S from './Toolbar.styles'
 
 export default function OverflowMenu({
@@ -30,7 +30,7 @@ export default function OverflowMenu({
   corner?: boolean // 세로폰에서 토글을 우상단 고정 버튼으로(⋯ Setting용)
 }) {
   const narrow = useIsMobile() // 세로폰(≤640) = 기존 모바일 하단 FAB 레이아웃
-  const touch = useIsMobile('(hover: none) and (pointer: coarse)') // 터치기기(가로폰·태블릿 포함)
+  const touch = useIsTouch() // 터치/앱(마우스 안드로이드=블루스택 포함)
   const popup = narrow || touch // 아코디언 대신 팝업으로 열지 (PC 외 모든 기기)
   const [open, setOpen] = useState(popup ? false : defaultOpen)
 

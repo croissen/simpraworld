@@ -52,12 +52,20 @@ export async function saveImageToGallery(blob: Blob, filename: string): Promise<
 }
 
 /**
- * 일반 파일(.spu 등)을 기기 Documents 폴더에 저장 → 파일앱에서 찾고 재-Import 가능.
- * 반환: 사용자에게 보여줄 저장 위치 문자열.
+ * .spu 파일을 기기 다운로드 폴더의 'spu' 하위폴더(Download/spu/)에 저장.
+ * → 파일앱 > 다운로드 > spu 에서 찾고 재-Import 가능.
+ * 반환: 저장 위치 문자열. 실패 시 throw.
  */
-export async function saveFileToDocuments(blob: Blob, filename: string): Promise<string> {
+export async function saveToDownloads(blob: Blob, filename: string): Promise<string> {
   const safe = filename.replace(/[/\\?%*:|"<>]/g, '_')
   const base64 = await blobToBase64(blob)
-  await Filesystem.writeFile({ path: safe, data: base64, directory: Directory.Documents, recursive: true })
-  return `Documents/${safe}`
+  // 외부저장소 쓰기 권한(안드 10 이하). 11+는 no-op이지만 호출은 안전.
+  try {
+    await Filesystem.requestPermissions()
+  } catch {
+    /* 권한 API 미지원/거부 → 그대로 쓰기 시도 */
+  }
+  const path = `Download/spu/${safe}`
+  await Filesystem.writeFile({ path, data: base64, directory: Directory.ExternalStorage, recursive: true })
+  return path
 }

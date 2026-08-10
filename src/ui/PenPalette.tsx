@@ -22,7 +22,7 @@ import {
 } from '../store'
 import type { InkMode } from '../store'
 import ColorPopup from './ColorPopup'
-import { useIsMobile } from '../useIsMobile'
+import { useIsTouch } from '../useIsMobile'
 
 const hasEyeDropper = typeof window !== 'undefined' && 'EyeDropper' in window
 
@@ -93,7 +93,7 @@ export default function PenPalette() {
         y: 72,
       },
   )
-  const touch = useIsMobile('(hover: none) and (pointer: coarse)') // 터치기기(가로폰·태블릿 포함) 기준
+  const touch = useIsTouch() // 터치/앱(마우스 안드로이드=블루스택 포함) 기준
   const panOn = getPanTool()
   const handOn = getHandMode()
   const [min, setMin] = useState(() => touch) // 터치기기(가로폰·태블릿 포함)는 최소화로 시작, PC(마우스)만 펼친 채로

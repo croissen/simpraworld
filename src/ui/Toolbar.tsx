@@ -11,8 +11,9 @@ import {
   getLibraryOpen,
   getUniverseName,
   goTo,
-  hasUnsavedWork,
+  hasContent,
   importWorld,
+  isDirty,
   leavePenForNav,
   redo,
   resetToSample,
@@ -86,14 +87,17 @@ export default function Toolbar() {
   // PC(크롬/엣지)만 파일 덮어쓰기 지원. 모바일/사파리는 다운로드 방식.
   const canOverwrite = supportsFileSave()
 
-  // New: 미저장 변경이 있을 때만 저장 확인, 없으면 바로 새로 시작
+  // 내용이 있는데 (변경됐거나 아직 파일로 저장된 적 없으면) → 초기화/교체 전 확인.
+  // (불러온 파일이 그대로 있으면 캔버스를 비워도 파일은 남으니 조용히 진행.)
+  const needsSaveConfirm = () => hasContent() && (isDirty() || !hasCurrentFile())
+  // New: 내용 손실 위험이 있으면 저장 확인, 없으면 바로 새로 시작
   function onNew() {
-    if (hasUnsavedWork()) setConfirmNew(true)
+    if (needsSaveConfirm()) setConfirmNew(true)
     else startNewUniverse()
   }
-  // Load: 미저장 변경이 있을 때만 저장 확인, 없으면 바로 파일 열기
+  // Load: 내용 손실 위험이 있으면 저장 확인, 없으면 바로 파일 열기
   function onLoad() {
-    if (hasUnsavedWork()) setConfirmLoad(true)
+    if (needsSaveConfirm()) setConfirmLoad(true)
     else openUniverseFile()
   }
 

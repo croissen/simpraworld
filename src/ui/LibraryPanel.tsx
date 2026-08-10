@@ -17,7 +17,7 @@ import {
   toggleLibrary,
   useFromLibrary,
 } from '../store'
-import { useIsMobile } from '../useIsMobile'
+import { useIsTouch } from '../useIsMobile'
 import ConfirmModal from './ConfirmModal'
 import * as S from './LibraryPanel.styles'
 import * as CM from './ContextMenu.styles'
@@ -25,7 +25,7 @@ import * as CM from './ContextMenu.styles'
 // Library: whole-universe folder/note tree (exposed + stored). Opens with current space expanded. Search + "Use".
 export default function LibraryPanel() {
   // 터치기기(PC 외 모든 기기)는 한 번 탭으로 폴더 열기/노트 열기. PC(마우스)는 더블클릭 유지.
-  const touch = useIsMobile('(hover: none) and (pointer: coarse)')
+  const touch = useIsTouch()
   const [query, setQuery] = useState('')
   // expand the folders along the current space path by default
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(breadcrumb().map((n) => n.id)))

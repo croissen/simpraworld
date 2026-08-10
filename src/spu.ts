@@ -5,7 +5,7 @@ import JSZip from 'jszip'
 import { get, set, del } from 'idb-keyval'
 import { Capacitor } from '@capacitor/core'
 import { FilePicker } from '@capawesome/capacitor-file-picker'
-import { saveFileToDocuments } from './nativeShare'
+import { saveToDownloads, shareFileNative } from './nativeShare'
 import { emptyDoc } from './types'
 import type { SimpraWorldDoc } from './types'
 
@@ -100,11 +100,17 @@ export async function downloadBlob(blob: Blob, filename: string) {
   // 네이티브(앱): WebView가 <a download>를 못 함 + .spu는 공유 시트가 불안정 →
   // 기기 Documents 폴더에 직접 저장하고 위치를 알린다(파일앱에서 찾고 재-Import 가능).
   if (Capacitor.isNativePlatform()) {
+    // 앱: 다운로드 폴더의 spu 하위폴더(Download/spu/)에 직접 저장.
     try {
-      const where = await saveFileToDocuments(blob, filename)
+      const where = await saveToDownloads(blob, filename)
       alert(`저장됨: ${where}`)
     } catch (e) {
-      alert('저장 실패: ' + ((e as Error).message || ''))
+      // 안드11+ 스코프드 스토리지 등으로 Download 직접 쓰기가 막히면 → 공유 시트로 저장(Files/드라이브 등)
+      try {
+        await shareFileNative(blob, filename)
+      } catch {
+        alert('저장 실패: ' + ((e as Error)?.message || '알 수 없는 오류'))
+      }
     }
     return
   }
@@ -121,8 +127,11 @@ export async function downloadBlob(blob: Blob, filename: string) {
 // ── "현재 파일"(Save 대상) 파일 핸들 다루기 ─────────────────────────
 // File System Access API(크롬/엣지 PC)에서만 같은 파일 덮어쓰기가 가능. 그 외는 다운로드 폴백.
 
-/** 같은 파일 덮어쓰기를 지원하는 환경인지(크롬/엣지 PC). */
+/** 같은 파일 덮어쓰기를 지원하는 환경인지(크롬/엣지 PC).
+ * ⚠️ 앱(네이티브)은 WebView가 showSaveFilePicker를 노출해도 실제론 안 되므로 무조건 false
+ *    → 앱은 Download/spu 저장 경로를 타고, Save As 버튼도 숨긴다. */
 export function supportsFileSave(): boolean {
+  if (Capacitor.isNativePlatform()) return false
   return typeof (window as unknown as { showSaveFilePicker?: unknown }).showSaveFilePicker === 'function'
 }
 
@@ -152,8 +161,9 @@ export async function ensureWritePermission(handle: FileSystemFileHandle): Promi
   return false
 }
 
-/** 같은 파일 열기(쓰기 가능한 핸들)를 지원하는 환경인지. */
+/** 같은 파일 열기(쓰기 가능한 핸들)를 지원하는 환경인지. 앱(네이티브)은 무조건 false. */
 export function supportsFileOpen(): boolean {
+  if (Capacitor.isNativePlatform()) return false
   return typeof (window as unknown as { showOpenFilePicker?: unknown }).showOpenFilePicker === 'function'
 }
 

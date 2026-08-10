@@ -35,7 +35,7 @@ import { toBlob } from 'html-to-image'
 import { Capacitor } from '@capacitor/core'
 import { saveImageToGallery, shareFileNative } from '../nativeShare'
 import { fileToImage, pickImageFile } from '../image'
-import { useIsMobile } from '../useIsMobile'
+import { useIsMobile, useIsTouch } from '../useIsMobile'
 import ConfirmModal from './ConfirmModal'
 import TagRow from './TagRow'
 import * as S from './NoteEditor.styles'
@@ -150,7 +150,7 @@ export default function NoteEditor({ nodeId }: { nodeId: string }) {
   // 가로 폰/태블릿/PC 좁은창은 아래 PC 노트를 화면에 맞춰(작게) 연다.
   const isMobile = useIsMobile('(max-width: 640px) and (hover: none) and (pointer: coarse)')
   // 터치기기 판정(가로폰·태블릿 포함) — 손가락 필기 여부(핸드모드) 게이트용.
-  const touch = useIsMobile('(hover: none) and (pointer: coarse)')
+  const touch = useIsTouch()
   const slotPid = getNoteEditorPid()
   const [viewedId, setViewedId] = useState(nodeId)
   const [query, setQuery] = useState('')
