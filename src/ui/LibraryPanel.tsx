@@ -19,6 +19,7 @@ import {
   select,
   storePlacement,
   toggleLibrary,
+  updateNode,
   useFromLibrary,
 } from '../store'
 import type { Placement } from '../types'
@@ -50,6 +51,7 @@ export default function LibraryPanel() {
   const [menu, setMenu] = useState<{ pid: string; nodeId: string; x: number; y: number } | null>(null)
   const [confirmDel, setConfirmDel] = useState<{ nodeId: string; name: string } | null>(null) // 삭제 확인
   const [renameGid, setRenameGid] = useState<string | null>(null) // 유니크 그룹 이름 변경
+  const [renameNode, setRenameNode] = useState<{ id: string; name: string } | null>(null) // shape 노드 이름 변경(노트 안 열림)
   // 롱프레스로 열린 직후엔 오버레이를 '클릭 통과'로 둬(손 떼는 고스트 클릭이 바로 닫지 못하게), 잠시 뒤 활성.
   const [armed, setArmed] = useState(true)
   const lp = useRef({ t: null as ReturnType<typeof setTimeout> | null, fired: false, x: 0, y: 0 })
@@ -97,6 +99,10 @@ export default function LibraryPanel() {
     const node = getNode(p.nodeId)
     if (!node) return null
     const isFolder = node.type === 'folder'
+    // shape=노트 없는 순수 도형 → 라이브러리에서 노트 열지 말고(이미지 추가로 변질 방지) 이름만 변경.
+    const isShape = node.type === 'shape'
+    const openRow = () =>
+      isFolder ? toggle(p.nodeId) : isShape ? setRenameNode({ id: node.id, name: node.name || '' }) : openNote(node.id)
     const open = expanded.has(p.nodeId)
     const stored = isStored(p)
     return (
@@ -107,9 +113,9 @@ export default function LibraryPanel() {
           $current={isFolder && p.nodeId === currentSpace}
           onClick={() => {
             if (lp.current.fired) return (lp.current.fired = false)
-            touch && (isFolder ? toggle(p.nodeId) : openNote(node.id))
+            touch && openRow()
           }}
-          onDoubleClick={() => (isFolder ? toggle(p.nodeId) : openNote(node.id))}
+          onDoubleClick={openRow}
           onContextMenu={(e) => {
             e.preventDefault()
             openMenu(p.id, node.id, e.clientX, e.clientY, false)
@@ -121,7 +127,7 @@ export default function LibraryPanel() {
             if (lp.current.t && (Math.abs(e.clientX - lp.current.x) > 8 || Math.abs(e.clientY - lp.current.y) > 8))
               cancelLongPress()
           }}
-          title={isFolder ? 'Tap to expand/collapse' : 'Double-click to open'}
+          title={isFolder ? 'Tap to expand/collapse' : isShape ? 'Tap to rename' : 'Double-click to open'}
         >
           {isFolder ? (
             <S.Caret onClick={(e) => (e.stopPropagation(), toggle(p.nodeId))}>{open ? '▾' : '▸'}</S.Caret>
@@ -271,11 +277,24 @@ export default function LibraryPanel() {
             results.map((r) => (
               <S.Row
                 key={r.node.id}
-                onClick={() => touch && r.node.type !== 'folder' && openNote(r.node.id)} // 터치: 한 번 탭으로 열기
-                onDoubleClick={() => r.node.type !== 'folder' && openNote(r.node.id)}
-                title={r.node.type === 'folder' ? '' : 'Double-click to open'}
+                onClick={() =>
+                  touch &&
+                  (r.node.type === 'folder'
+                    ? undefined
+                    : r.node.type === 'shape'
+                      ? setRenameNode({ id: r.node.id, name: r.node.name || '' }) // shape는 노트 대신 이름변경
+                      : openNote(r.node.id))
+                }
+                onDoubleClick={() =>
+                  r.node.type === 'folder'
+                    ? undefined
+                    : r.node.type === 'shape'
+                      ? setRenameNode({ id: r.node.id, name: r.node.name || '' })
+                      : openNote(r.node.id)
+                }
+                title={r.node.type === 'folder' ? '' : r.node.type === 'shape' ? 'Tap to rename' : 'Double-click to open'}
               >
-                <S.Icon>{r.node.type === 'folder' ? '📁' : r.node.type === 'photo' ? '🖼' : r.node.type === 'text' ? 'T' : '📝'}</S.Icon>
+                <S.Icon>{r.node.type === 'folder' ? '📁' : r.node.type === 'photo' ? '🖼' : r.node.type === 'text' ? 'T' : r.node.type === 'shape' ? '◆' : '📝'}</S.Icon>
                 <S.Name title={r.node.name}>{r.node.name || 'Untitled'}</S.Name>
                 <S.PathLabel title={r.path}>{r.path}</S.PathLabel>
                 <S.UseBtn
@@ -345,6 +364,17 @@ export default function LibraryPanel() {
             setRenameGid(null)
           }}
           onCancel={() => setRenameGid(null)}
+        />
+      )}
+      {renameNode && (
+        <PromptModal
+          title="Shape name"
+          initial={renameNode.name}
+          onSubmit={(name) => {
+            updateNode(renameNode.id, { name: name.trim() })
+            setRenameNode(null)
+          }}
+          onCancel={() => setRenameNode(null)}
         />
       )}
     </S.Panel>
