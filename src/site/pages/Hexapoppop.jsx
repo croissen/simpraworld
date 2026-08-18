@@ -2,10 +2,14 @@ import { useEffect } from 'react'
 import * as S from './Dayflip.styles'
 
 const SCREENSHOTS = [
-  '/hexapoppop/screenshot_01.png',
-  '/hexapoppop/screenshot_02.png',
-  '/hexapoppop/screenshot_03.png',
-  '/hexapoppop/screenshot_04.png',
+  '/hexapoppop/screenshot_01.webp',
+  '/hexapoppop/screenshot_02.webp',
+  '/hexapoppop/screenshot_03.webp',
+  '/hexapoppop/screenshot_04.webp',
+  '/hexapoppop/screenshot_01.webp',
+  '/hexapoppop/screenshot_02.webp',
+  '/hexapoppop/screenshot_03.webp',
+  '/hexapoppop/screenshot_04.webp'
 ]
 
 const APP_ICON = '/hexapoppop/icon.png'
@@ -29,25 +33,28 @@ export default function Hexapoppop() {
           <S.MetaRow>
             <S.MetaItem>
               <S.MetaValue><S.Star>★</S.Star> 5점 희망</S.MetaValue>
-              <S.MetaLabel>리뷰 (테스트)</S.MetaLabel>
+              <S.MetaLabel>리뷰</S.MetaLabel>
             </S.MetaItem>
             <S.MetaItem>
-              <S.MetaValue>Beta</S.MetaValue>
-              <S.MetaLabel>비공개 테스트</S.MetaLabel>
+              <S.MetaValue>무료</S.MetaValue>
+              <S.MetaLabel>Google Play</S.MetaLabel>
             </S.MetaItem>
             <S.MetaItem>
-              <S.MetaValue>퍼즐</S.MetaValue>
-              <S.MetaLabel>게임</S.MetaLabel>
+              <S.MetaValue>3세 이상</S.MetaValue>
+              <S.MetaLabel>전체 이용가</S.MetaLabel>
             </S.MetaItem>
           </S.MetaRow>
 
           <S.ActionRow>
-            <S.InstallBtn as="button" type="button" disabled aria-disabled="true">
-              비공개 테스트 진행중이에요!
+            <S.InstallBtn
+              href="https://play.google.com/store/apps/details?id=com.simpraworld.hexapoppop&hl=ko"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Google Play에서 다운로드
             </S.InstallBtn>
           </S.ActionRow>
 
-          <S.DeviceNote>* 현재 Google Play 비공개 테스트로 운영 중입니다. 검색에는 노출되지 않으며, 테스트 참여를 희망하시면 support@simpraworld.com 으로 문의 부탁드립니다.</S.DeviceNote>
         </S.HeaderLeft>
 
         <S.HeaderRight>

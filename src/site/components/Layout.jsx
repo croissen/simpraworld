@@ -16,6 +16,9 @@ const NAV = [
 // ↓ 새 사이트는 여기 한 줄만 추가하면 데스크탑·모바일 양쪽에 반영됨.
 const OTHER = [
   { label: '심프라 유니버스', to: '/my-universe', kind: 'route' },
+  { label: '서울EZ', to: 'https://seoulez.com/', kind: 'external' },
+  { label: '로또베이스', to: 'https://lottobase.kr/', kind: 'external' },
+  { label: '행복스토어', to: 'https://hengbok.store/', kind: 'external' },
   { label: '웨이브폼 메이커', to: '/waveform-maker.html', kind: 'page' },
 ]
 
